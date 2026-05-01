@@ -1,4 +1,4 @@
-const SlideFullWindowButton = ({ isFullWindow, onToggleFullWindow }: any) => {
+const PageFullWindowButton = ({ isFullWindow, onToggleFullWindow }: any) => {
   return (
     <div className="slide-page-full-window-zone">
       <button className="slide-page-full-window-btn" type="button" onClick={onToggleFullWindow}>
@@ -34,4 +34,4 @@ const SlideFullWindowButton = ({ isFullWindow, onToggleFullWindow }: any) => {
   );
 };
 
-export default SlideFullWindowButton;
+export default PageFullWindowButton;

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import Menu from '@wwf971/react-comp-misc/Menu';
 import CompContainer from '../CompContainer';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 import CompSwitcher from '../comp_custom/CompSwitcher';
-import SlideEdgeNavControls from './SlideEdgeNavControls';
-import SlideFullWindowButton from './SlideFullWindowButton';
+import PageEdgeNavControls from './PageEdgeNavControls';
+import PageFullWindowButton from './PageFullWindowButton';
 
-const SLIDE_HANDLE_DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+const PAGE_HANDLE_DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
 const clamp = (value, min, max) => {
   return Math.min(max, Math.max(min, value));
@@ -54,24 +54,24 @@ const Slide = observer(({
   }, [isFullWindow, pageId, store]);
 
   const styleVars = useMemo((): any => {
-    const safeSlidePixelWidth = Math.max(320, slidePixelWidth || 960);
-    const slideUiBtnSize = clamp(safeSlidePixelWidth * 0.021, 16, 34);
-    const slideUiFontSize = clamp(safeSlidePixelWidth * 0.0115, 10, 14);
-    const edgeNavBtnWidth = clamp(safeSlidePixelWidth * 0.035, 28, 60);
+    const safePagePixelWidth = Math.max(320, slidePixelWidth || 960);
+    const pageUiBtnSize = clamp(safePagePixelWidth * 0.021, 16, 34);
+    const pageUiFontSize = clamp(safePagePixelWidth * 0.0115, 10, 14);
+    const edgeNavBtnWidth = clamp(safePagePixelWidth * 0.035, 28, 60);
     const edgeNavBtnHeight = Math.round(edgeNavBtnWidth * 1.5);
     const edgeNavIconSize = clamp(edgeNavBtnWidth * 0.52, 14, 28);
-    const fullWindowBtnSize = clamp(safeSlidePixelWidth * 0.043, 30, 68);
+    const fullWindowBtnSize = clamp(safePagePixelWidth * 0.043, 30, 68);
     const fullWindowIconSize = clamp(fullWindowBtnSize * 0.48, 14, 30);
-    const switcherFontSize = clamp(safeSlidePixelWidth * 0.012, 11, 20);
-    const switcherDescFontSize = clamp(safeSlidePixelWidth * 0.0105, 10, 17);
-    const switcherInputHeight = clamp(safeSlidePixelWidth * 0.028, 24, 44);
-    const switcherOptionHeight = clamp(safeSlidePixelWidth * 0.023, 20, 36);
+    const switcherFontSize = clamp(safePagePixelWidth * 0.012, 11, 20);
+    const switcherDescFontSize = clamp(safePagePixelWidth * 0.0105, 10, 17);
+    const switcherInputHeight = clamp(safePagePixelWidth * 0.028, 24, 44);
+    const switcherOptionHeight = clamp(safePagePixelWidth * 0.023, 20, 36);
     const temporarySwitcherWidthRatio = 0.24;
     const temporarySwitcherHeightRatio = 0.09;
     const nextStyle: any = {
       '--slide-page-aspect-ratio': `${pageAspectRatio}`,
-      '--slide-ui-btn-size': `${slideUiBtnSize}px`,
-      '--slide-ui-font-size': `${slideUiFontSize}px`,
+      '--slide-ui-btn-size': `${pageUiBtnSize}px`,
+      '--slide-ui-font-size': `${pageUiFontSize}px`,
       '--slide-edge-nav-btn-width': `${edgeNavBtnWidth}px`,
       '--slide-edge-nav-btn-height': `${edgeNavBtnHeight}px`,
       '--slide-edge-nav-icon-size': `${edgeNavIconSize}px`,
@@ -302,19 +302,19 @@ const Slide = observer(({
           onContextMenu={openContextMenu}
           onDoubleClick={requestCreateSwitcherCompByPoint}
         >
-          <SlideEdgeNavControls
+          <PageEdgeNavControls
             isPrevEnabled={isPrevEnabled}
             isNextEnabled={isNextEnabled}
             onGoPrev={onGoPrev}
             onGoNext={onGoNext}
             onCreateNextPage={onCreateNextPage}
           />
-          <SlideFullWindowButton
+          <PageFullWindowButton
             isFullWindow={isFullWindow}
             onToggleFullWindow={onToggleFullWindow}
           />
           {store.isSlideSurfaceSelected && !isFullWindow && !isReadOnly
-            ? SLIDE_HANDLE_DIRS.map((dir) => (
+            ? PAGE_HANDLE_DIRS.map((dir) => (
                 <button
                   key={dir}
                   className={`slide-page-resize-handle handle-${dir}`}

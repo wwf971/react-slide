@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 const CompTextSingleline = observer(
   ({ data, containerId, compId, requestContainerMoveByPoint, isReadOnly }: any) => {

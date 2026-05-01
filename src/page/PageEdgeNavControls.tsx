@@ -1,6 +1,6 @@
 import { LeftIcon, RightIcon, PlusIcon } from '@wwf971/react-comp-misc/Icon';
 
-const SlideEdgeNavControls = ({
+const PageEdgeNavControls = ({
   isPrevEnabled,
   isNextEnabled,
   onGoPrev,
@@ -42,4 +42,4 @@ const SlideEdgeNavControls = ({
   );
 };
 
-export default SlideEdgeNavControls;
+export default PageEdgeNavControls;

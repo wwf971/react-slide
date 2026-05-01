@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Excalidraw } from '@excalidraw/excalidraw';
 import '@excalidraw/excalidraw/index.css';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 8;

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import DragIcon from '@wwf971/react-comp-misc/DragIcon';
 import Menu from '@wwf971/react-comp-misc/Menu';
-import { useSlidesStore } from './contentStore';
+import { useSlidesStore } from './store/slidesStore';
 
 const HANDLE_DIRS = [
   'n',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import Menu from '@wwf971/react-comp-misc/Menu';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 const CompImage = observer(
   ({ data, containerId, requestContainerMoveByPointer, isReadOnly }: any) => {

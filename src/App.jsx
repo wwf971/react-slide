@@ -1,4 +1,4 @@
-import SlidesExample from './slides/slides/example';
+import SlidesExample from './slide/example';
 import './App.css';
 
 function App() {

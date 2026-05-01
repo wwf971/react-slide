@@ -5,7 +5,7 @@ const renderIcon = (IconComp: any, width: number, height: number) => {
   return React.createElement(IconComp, { width, height });
 };
 
-const SlidesSwticher = ({
+const SlideSwitcher = ({
   slideItems,
   currentSlideId,
   currentSlideName,
@@ -192,4 +192,4 @@ const SlidesSwticher = ({
   );
 };
 
-export default SlidesSwticher;
+export default SlideSwitcher;

@@ -8,7 +8,7 @@ import json from 'highlight.js/lib/languages/json';
 import bash from 'highlight.js/lib/languages/bash';
 import xml from 'highlight.js/lib/languages/xml';
 import 'highlight.js/styles/atom-one-dark.css';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 hljs.registerLanguage('javascript', javascript);
 hljs.registerLanguage('typescript', typescript);

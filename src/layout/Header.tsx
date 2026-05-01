@@ -1,6 +1,7 @@
 import React from 'react';
 import { LeftIcon, RightIcon } from '@wwf971/react-comp-misc/Icon';
-import SlidesSwticher from './SlidesSwticher';
+import SlideSwitcher from './SlideSwitcher';
+import DbSwitcher from '../backend/DbSwitcher';
 
 const renderIcon = (IconComp: any, width: number, height: number) => {
   return React.createElement(IconComp, { width, height });
@@ -29,6 +30,16 @@ const Header = ({
   onDeleteSlide,
   onReinitDatabase,
   onDumpDatabase,
+  databaseItems,
+  currentDatabaseKey,
+  isDatabaseLoading,
+  isDatabaseSwitching,
+  isDatabaseTesting,
+  testingDatabaseKey,
+  loadFailureMessage,
+  onRefreshDatabases,
+  onSwitchDatabase,
+  onTestDatabase,
   onCreatePageBefore,
   onCreatePageAfter,
   onDeletePage,
@@ -40,7 +51,20 @@ const Header = ({
   return (
     <div className={`slide-system-toolbar ${isHidden ? 'is-hidden' : ''}`}>
       <div className="slide-toolbar-settings">
-        <SlidesSwticher
+        <DbSwitcher
+          databaseItems={databaseItems}
+          currentDatabaseKey={currentDatabaseKey}
+          isSettingBusy={isSettingBusy}
+          isDatabaseLoading={isDatabaseLoading}
+          isDatabaseSwitching={isDatabaseSwitching}
+          isDatabaseTesting={isDatabaseTesting}
+          testingDatabaseKey={testingDatabaseKey}
+          loadFailureMessage={loadFailureMessage}
+          onRefreshDatabases={onRefreshDatabases}
+          onSwitchDatabase={onSwitchDatabase}
+          onTestDatabase={onTestDatabase}
+        />
+        <SlideSwitcher
           slideItems={slideItems}
           currentSlideId={currentSlideId}
           currentSlideName={currentSlideName}

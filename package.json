@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "slides": "node src/slides/backend/server.js"
+    "slides": "node backend/server.js"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",

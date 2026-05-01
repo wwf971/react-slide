@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { SlideStoreProvider } from '../contentStore';
-import Slide from '../slide/Slide';
+import { SlideStoreProvider } from '../store/slidesStore';
+import Page from '../page/Page';
 import Header from '../layout/Header';
-import '../slide/Slide.css';
+import '../page/Page.css';
 
-const Slides = observer(({ store, getComp }: any) => {
+const Slides = observer(({ store, backendStore, getComp }: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
   const totalPage = store.getTotalPageIndex();
@@ -27,6 +27,11 @@ const Slides = observer(({ store, getComp }: any) => {
   useEffect(() => {
     store.requestInitializeSlides();
   }, [store]);
+
+  useEffect(() => {
+    if (!backendStore) return;
+    backendStore.requestLoadDatabases();
+  }, [backendStore]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -112,6 +117,24 @@ const Slides = observer(({ store, getComp }: any) => {
           onDumpDatabase={() => {
             store.requestDumpDatabaseSnapshot();
           }}
+          databaseItems={backendStore?.databaseItems ?? []}
+          currentDatabaseKey={backendStore?.currentDatabaseKey ?? ''}
+          isDatabaseLoading={backendStore?.isDatabaseLoading ?? false}
+          isDatabaseSwitching={backendStore?.isDatabaseSwitching ?? false}
+          isDatabaseTesting={backendStore?.isDatabaseTesting ?? false}
+          testingDatabaseKey={backendStore?.testingDatabaseKey ?? ''}
+          loadFailureMessage={backendStore?.loadFailureMessage ?? ''}
+          onRefreshDatabases={() => {
+            backendStore?.requestLoadDatabases();
+          }}
+          onTestDatabase={(presetKey) => {
+            backendStore?.requestTestDatabase(presetKey);
+          }}
+          onSwitchDatabase={async (presetKey) => {
+            const result = await backendStore?.requestSwitchDatabase(presetKey);
+            if (!result?.ok) return;
+            await store.requestReloadAfterDatabaseSwitch();
+          }}
           onCreatePageBefore={() => {
             store.requestCreatePageBeforeCurrent();
           }}
@@ -140,7 +163,7 @@ const Slides = observer(({ store, getComp }: any) => {
         />
         <div className="slide-system-canvas-wrap">
           {currentPage ? (
-            <Slide
+            <Page
               {...({
                 pageId: currentPage.id,
                 getComp,

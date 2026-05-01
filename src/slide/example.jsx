@@ -8,7 +8,8 @@ import CompExcalidraw from '../comp_custom/CompExcalidraw';
 import CompCode from '../comp_custom/CompCode';
 import CompIFrame from '../comp_custom/CompIFrame';
 import CompUrl from '../comp_custom/CompUrl';
-import { createDemoSlideStore } from '../contentStore';
+import { createDemoSlideStore } from '../store/slidesStore';
+import { createBackendStore } from '../store/backendStore';
 
 const resolveComp = (compName) => {
   if (compName === 'CompTextSingleline') return CompTextSingleline;
@@ -24,9 +25,10 @@ const resolveComp = (compName) => {
 
 const SlidesExample = () => {
   const store = useMemo(() => createDemoSlideStore(), []);
+  const backendStore = useMemo(() => createBackendStore(), []);
   const getComp = useMemo(() => resolveComp, []);
 
-  return <Slides store={store} getComp={getComp} />;
+  return <Slides store={store} backendStore={backendStore} getComp={getComp} />;
 };
 
 export default SlidesExample;

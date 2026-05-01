@@ -1,7 +1,7 @@
 import React, { createContext, useContext } from 'react';
 import { makeAutoObservable, runInAction } from 'mobx';
-import { createDemoPersistStore } from './contentPersistStore';
-import { getAvailableCompScripts, resolveCompScriptPayload } from './compScript';
+import { createDemoPersistStore } from './slidesPersistStore';
+import { getAvailableCompScripts, resolveCompScriptPayload } from '../compScript';
 
 const MIN_RATIO_SIZE = 0.03;
 const MAX_RATIO_SIZE = 4;
@@ -348,6 +348,22 @@ class SlidesStore {
         this.isSlidesInitializing = false;
       });
     }
+  }
+
+  async requestReloadAfterDatabaseSwitch() {
+    if (this.isSlidesInitializing) return { ok: false };
+    if (!this.slidesPersistStore) return { ok: false };
+    runInAction(() => {
+      this.slideItems = [];
+      this.currentSlideId = '';
+      this.slideRuntimeBySlideId = {};
+      this.dirtyPageStateBySlideId = {};
+      this.dirtyPageStateById = {};
+      this.persistFailureMessage = '';
+    });
+    this.slidesPersistStore.clearLocalSnapshotCache?.();
+    await this.requestInitializeSlides();
+    return { ok: true };
   }
 
   async requestSwitchSlide(slideId) {

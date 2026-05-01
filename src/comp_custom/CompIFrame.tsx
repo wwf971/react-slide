@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 const clamp = (value, min, max) => {
   return Math.min(max, Math.max(min, value));

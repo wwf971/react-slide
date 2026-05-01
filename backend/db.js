@@ -1,11 +1,5 @@
 import { Client, Pool } from 'pg';
-import {
-  DATABASE_IP,
-  DATABASE_PORT,
-  DATABASE_NAME,
-  DATABASE_USERNAME,
-  DATABASE_PASSWORD,
-} from './config.js';
+import { DATABASE } from './config.js';
 
 const quoteIdentifier = (name) => {
   if (!/^[a-z0-9_]+$/.test(name)) {
@@ -14,35 +8,35 @@ const quoteIdentifier = (name) => {
   return `"${name}"`;
 };
 
-const createConnectionOptions = (databaseName) => {
+const createConnectionOptions = (databaseName, databaseConfig = DATABASE) => {
   return {
-    host: DATABASE_IP,
-    port: DATABASE_PORT,
+    host: databaseConfig.IP,
+    port: databaseConfig.PORT,
     database: databaseName,
-    user: DATABASE_USERNAME,
-    password: DATABASE_PASSWORD,
+    user: databaseConfig.USERNAME,
+    password: databaseConfig.PASSWORD,
   };
 };
 
-const ensureDatabaseExists = async () => {
-  const adminClient = new Client(createConnectionOptions('postgres'));
+const ensureDatabaseExists = async (databaseConfig = DATABASE) => {
+  const adminClient = new Client(createConnectionOptions('postgres', databaseConfig));
   await adminClient.connect();
   try {
     const result = await adminClient.query(
       'SELECT 1 FROM pg_database WHERE datname = $1',
-      [DATABASE_NAME],
+      [databaseConfig.DATABASE_NAME],
     );
     if (result.rowCount === 0) {
-      await adminClient.query(`CREATE DATABASE ${quoteIdentifier(DATABASE_NAME)}`);
+      await adminClient.query(`CREATE DATABASE ${quoteIdentifier(databaseConfig.DATABASE_NAME)}`);
     }
   } finally {
     await adminClient.end();
   }
 };
 
-const openDatabase = async () => {
-  await ensureDatabaseExists();
-  const pool = new Pool(createConnectionOptions(DATABASE_NAME));
+const openDatabase = async (databaseConfig = DATABASE) => {
+  await ensureDatabaseExists(databaseConfig);
+  const pool = new Pool(createConnectionOptions(databaseConfig.DATABASE_NAME, databaseConfig));
   const db = {
     query: (sql, params = []) => pool.query(sql, params),
     withTransaction: async (action) => {
@@ -63,9 +57,9 @@ const openDatabase = async () => {
     },
     close: async () => pool.end(),
     info: {
-      host: DATABASE_IP,
-      port: DATABASE_PORT,
-      database: DATABASE_NAME,
+      host: databaseConfig.IP,
+      port: databaseConfig.PORT,
+      database: databaseConfig.DATABASE_NAME,
     },
   };
   return db;

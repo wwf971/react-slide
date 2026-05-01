@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, close } from './db.js';
+import { DATABASE_PRESET_KEY, DATABASES } from './config.js';
 import {
   createSlide,
   createResource,
@@ -27,7 +28,7 @@ import {
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const backendDir = dirname(currentFilePath);
-const projectRootDir = resolve(backendDir, '../../..');
+const projectRootDir = resolve(backendDir, '..');
 const frontendDistDir = resolve(projectRootDir, 'dist');
 const frontendIndexPath = resolve(frontendDistDir, 'index.html');
 const backendDumpDir = resolve(projectRootDir, 'data-dumps');
@@ -44,7 +45,44 @@ const getTimestampToken = () => {
 };
 
 const createSlideBackendApp = async () => {
-  const db = await openDatabase();
+  let currentDatabaseKey = DATABASE_PRESET_KEY;
+  let db = await openDatabase(DATABASES[currentDatabaseKey]);
+  const databaseErrorByKey = {};
+  let isDatabaseSwitching = false;
+
+  const toDatabaseItem = (databaseKey, options = {}) => {
+    const preset = DATABASES[databaseKey] ?? {};
+    const errorMessage = `${databaseErrorByKey[databaseKey] ?? ''}`.trim();
+    return {
+      key: databaseKey,
+      label: databaseKey.replace(/^DATABASE_/, '').toLowerCase(),
+      databaseName: `${preset.DATABASE_NAME ?? ''}`,
+      host: `${preset.IP ?? ''}`,
+      port: Number(preset.PORT ?? 0),
+      isCurrent: databaseKey === currentDatabaseKey,
+      isConnected: options.isConnected === true,
+      isInError: Boolean(errorMessage),
+      errorMessage,
+    };
+  };
+
+  const requestTestDatabase = async (databaseKey) => {
+    const preset = DATABASES[databaseKey];
+    if (!preset) {
+      return { ok: false, message: 'Unknown database preset key' };
+    }
+    try {
+      const testDb = await openDatabase(preset);
+      await close(testDb);
+      databaseErrorByKey[databaseKey] = '';
+      return { ok: true, message: '' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to connect database';
+      databaseErrorByKey[databaseKey] = message;
+      return { ok: false, message };
+    }
+  };
+
   await initBackendStore(db);
 
   const app = express();
@@ -53,6 +91,93 @@ const createSlideBackendApp = async () => {
 
   app.get('/api/slide/health', (_req, res) => {
     res.json({ ok: true, db: db.info });
+  });
+
+  app.get('/api/slide/database/presets', (_req, res) => {
+    const databaseItems = Object.keys(DATABASES).map((databaseKey) => {
+      return toDatabaseItem(databaseKey, {
+        isConnected: databaseKey === currentDatabaseKey,
+      });
+    });
+    res.json({
+      ok: true,
+      currentDatabaseKey,
+      databaseItems,
+    });
+  });
+
+  app.post('/api/slide/database/test', async (req, res) => {
+    const databaseKey = `${req.body?.databaseKey ?? ''}`;
+    const result = await requestTestDatabase(databaseKey);
+    if (!result.ok) {
+      res.status(400).json({
+        ok: false,
+        message: result.message,
+        databaseItem: toDatabaseItem(databaseKey, { isConnected: false }),
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      databaseItem: toDatabaseItem(databaseKey, { isConnected: databaseKey === currentDatabaseKey }),
+    });
+  });
+
+  app.post('/api/slide/database/switch', async (req, res) => {
+    const databaseKey = `${req.body?.databaseKey ?? ''}`;
+    if (!DATABASES[databaseKey]) {
+      res.status(400).json({
+        ok: false,
+        message: 'Unknown database preset key',
+      });
+      return;
+    }
+    if (isDatabaseSwitching) {
+      res.status(409).json({
+        ok: false,
+        message: 'Database switching is busy',
+      });
+      return;
+    }
+    if (databaseKey === currentDatabaseKey) {
+      res.json({
+        ok: true,
+        currentDatabaseKey,
+        databaseItem: toDatabaseItem(databaseKey, { isConnected: true }),
+      });
+      return;
+    }
+    isDatabaseSwitching = true;
+    let nextDb = null;
+    try {
+      nextDb = await openDatabase(DATABASES[databaseKey]);
+      await initBackendStore(nextDb);
+      const prevDb = db;
+      db = nextDb;
+      nextDb = null;
+      currentDatabaseKey = databaseKey;
+      databaseErrorByKey[databaseKey] = '';
+      await close(prevDb);
+      res.json({
+        ok: true,
+        currentDatabaseKey,
+        databaseItem: toDatabaseItem(databaseKey, { isConnected: true }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to switch database';
+      databaseErrorByKey[databaseKey] = message;
+      if (nextDb) {
+        await close(nextDb).catch(() => {});
+      }
+      res.status(500).json({
+        ok: false,
+        message,
+        currentDatabaseKey,
+        databaseItem: toDatabaseItem(databaseKey, { isConnected: false }),
+      });
+    } finally {
+      isDatabaseSwitching = false;
+    }
   });
 
   app.get('/api/slide/slides', async (_req, res) => {

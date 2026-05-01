@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useSlidesStore } from '../contentStore';
+import { useSlidesStore } from '../store/slidesStore';
 
 const CompMetadata = observer(
   ({ data, containerId, requestContainerMoveByPointer, isReadOnly }: any) => {
