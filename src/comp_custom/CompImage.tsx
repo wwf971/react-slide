@@ -14,7 +14,24 @@ const CompImage = observer(
   const isCover = data?.isCover === true;
   const imageResourceId = data?.imageResourceId ?? '';
   const imageMimeType = data?.imageMimeType ?? 'image/png';
-  const imageUrl = resourceImageUrl || data?.imageUrl || '';
+  const rawImageUrl = resourceImageUrl || data?.imageUrl || '';
+  const normalizedImageUrl = (() => {
+    const value = `${rawImageUrl ?? ''}`.trim();
+    if (!value) return '';
+    if (
+      value.startsWith('data:image/') ||
+      value.startsWith('http://') ||
+      value.startsWith('https://') ||
+      value.startsWith('/')
+    ) {
+      return value;
+    }
+    if (/^[A-Za-z0-9+/=]+$/.test(value) && value.length > 32) {
+      return `data:${imageMimeType};base64,${value}`;
+    }
+    return value;
+  })();
+  const imageUrl = normalizedImageUrl;
   const hasConfiguredImage = Boolean(imageResourceId || data?.imageUrl);
   const containerSize = store.getContainerSize(containerId);
   const hasImageData = typeof imageUrl === 'string' && imageUrl.length > 0;
@@ -23,6 +40,7 @@ const CompImage = observer(
     (imageUrl.startsWith('data:image/') ||
       imageUrl.startsWith('http://') ||
       imageUrl.startsWith('https://') ||
+      imageUrl.startsWith('file://') ||
       imageUrl.startsWith('/'));
 
   useEffect(() => {

@@ -1,26 +1,19 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Buffer } from 'node:buffer';
-import { all, get, run } from './db.js';
 import { createSeedSlideDocument } from './init_data.js';
+import { OBJECT_STORAGE_SERVICE_URL, OBJECT_STORAGE_SPACE_NAME } from './config.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const initDbSqlPath = path.join(__dirname, 'init_db.sql');
-
-const parseJson = (value, fallbackValue) => {
-  if (!value) return fallbackValue;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return fallbackValue;
-  }
+const TYPE_CODE = {
+  slide: 1,
+  page: 2,
+  container: 3,
+  component: 4,
+  resourceMeta: 5,
+  resourceContentText: 6,
+  resourceContentBytes: 7,
 };
 
-const nowIso = () => {
-  return new Date().toISOString();
-};
+const cloneData = (value) => JSON.parse(JSON.stringify(value ?? {}));
+const nowIso = () => new Date().toISOString();
 
 const generateRandomToken = (length = 10) => {
   const chars = '0123456789abcdefghijklmnopqrstuvwxyz';
@@ -31,63 +24,69 @@ const generateRandomToken = (length = 10) => {
   return output;
 };
 
-const generateTypedId = (typePrefix, tokenLength = 10) => {
-  return `${typePrefix}-${generateRandomToken(tokenLength)}`;
-};
+const generateTypedId = (typePrefix, tokenLength = 10) => `${typePrefix}-${generateRandomToken(tokenLength)}`;
 
-const runInTransaction = async (db, action) => {
-  if (typeof db.withTransaction === 'function') {
-    await db.withTransaction(async (txDb) => {
-      await action(txDb);
-    });
-    return;
-  }
-  await run(db, 'BEGIN');
+const requestObjectStorage = async (ctx, method, path, options = {}) => {
+  const query = options.query ?? {};
+  const body = options.body;
+  const searchParams = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (value === undefined || value === null) return;
+    searchParams.set(key, `${value}`);
+  });
+  const queryText = searchParams.toString();
+  const url = `${ctx.serviceUrl}${path}${queryText ? `?${queryText}` : ''}`;
+  let response;
   try {
-    await action(db);
-    await run(db, 'COMMIT');
+    response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
   } catch (error) {
-    await run(db, 'ROLLBACK');
-    throw error;
+    throw new Error(`object-storage unreachable: ${error instanceof Error ? error.message : 'network error'}`);
   }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || Number(payload?.code ?? -1) < 0) {
+    const message = `${payload?.message ?? ''}`.trim() || `request failed: ${response.status}`;
+    throw new Error(`object-storage request failed: ${message}`);
+  }
+  return payload?.data ?? {};
 };
 
-const applySchema = async (db) => {
-  const sql = fs.readFileSync(initDbSqlPath, 'utf8');
-  await run(db, sql);
+const listAllObjectsByType = async (ctx, dataType, type) => {
+  const output = [];
+  let pageIndex = 1;
+  const pageSize = 200;
+  while (true) {
+    const data = await requestObjectStorage(ctx, 'GET', '/api/object/list', {
+      query: {
+        spaceId: ctx.spaceId,
+        dataType,
+        type,
+        pageIndex,
+        pageSize,
+      },
+    });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (items.length <= 0) break;
+    output.push(...items);
+    const totalCount = Number(data?.totalCount ?? 0);
+    if (output.length >= totalCount) break;
+    pageIndex += 1;
+  }
+  return output;
 };
 
-const hasColumn = async (db, tableName, columnName) => {
-  const row = await get(
-    db,
-    `
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = 'public'
-      AND table_name = $1
-      AND column_name = $2
-    LIMIT 1
-    `,
-    [tableName, columnName],
-  );
-  return Boolean(row);
-};
-
-const resetTablesForSchemaMigration = async (db) => {
-  await run(db, 'DROP TABLE IF EXISTS slide_metadata');
-  await run(db, 'DROP TABLE IF EXISTS slide_resources');
-  await run(db, 'DROP TABLE IF EXISTS slide_containers');
-  await run(db, 'DROP TABLE IF EXISTS slide_components');
-  await run(db, 'DROP TABLE IF EXISTS slide_pages');
-  await run(db, 'DROP TABLE IF EXISTS slide_documents');
-};
-
-const migrateResourceKindToTypeIfNeeded = async (db) => {
-  const hasKindColumn = await hasColumn(db, 'slide_resources', 'kind');
-  if (!hasKindColumn) return;
-  const hasTypeColumn = await hasColumn(db, 'slide_resources', 'type');
-  if (hasTypeColumn) return;
-  await run(db, 'ALTER TABLE slide_resources RENAME COLUMN kind TO type');
+const parseJsonText = (value, fallbackValue) => {
+  if (!value) return fallbackValue;
+  try {
+    return JSON.parse(`${value}`);
+  } catch {
+    return fallbackValue;
+  }
 };
 
 const normalizeSlidePayload = (payload, fallbackName = 'Untitled') => {
@@ -104,146 +103,257 @@ const normalizeSlidePayload = (payload, fallbackName = 'Untitled') => {
       aspectRatio: { x: 16, y: 9 },
     };
   }
+  if (!nextPayload.pageDataById) nextPayload.pageDataById = {};
+  if (!nextPayload.containerDataById) nextPayload.containerDataById = {};
+  if (!nextPayload.compDataById) nextPayload.compDataById = {};
+  Object.values(nextPayload.compDataById).forEach((compEntry) => {
+    if (`${compEntry?.compName ?? ''}` !== 'CompIFrame') return;
+    compEntry.compData = {
+      ...(compEntry?.compData ?? {}),
+      isIframeActive: false,
+    };
+  });
   return nextPayload;
 };
 
-const cloneData = (value) => {
-  return JSON.parse(JSON.stringify(value ?? {}));
+const readSpaceMetadataMap = async (ctx) => {
+  const listData = await requestObjectStorage(ctx, 'GET', '/api/space/metadata/list', {
+    query: { spaceId: ctx.spaceId },
+  });
+  const output = {};
+  const items = Array.isArray(listData?.items) ? listData.items : [];
+  items.forEach((item) => {
+    const tag = `${item?.tag ?? ''}`;
+    if (!tag) return;
+    output[tag] = item;
+  });
+  return output;
 };
 
-const insertOrUpdateSlideDocument = async (db, slideId, payload, createdAt = null) => {
-  const safePayload = normalizeSlidePayload(payload);
-  const timestamp = nowIso();
-  const createdTimestamp = createdAt ?? timestamp;
-
-  await run(
-    db,
-    `
-    INSERT INTO slide_documents (id, data_json, created_at, updated_at)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      data_json = excluded.data_json,
-      updated_at = excluded.updated_at
-    `,
-    [
-      slideId,
-      JSON.stringify(safePayload),
-      createdTimestamp,
-      timestamp,
-    ],
-  );
+const upsertSpaceMetadataJson = async (ctx, tag, valueJson) => {
+  await requestObjectStorage(ctx, 'POST', '/api/space/metadata/upsert', {
+    body: {
+      spaceId: ctx.spaceId,
+      tag,
+      valueType: 2,
+      valueJson,
+    },
+  });
 };
 
-const buildSlideSnapshot = async (db, slideId) => {
-  const slideRow = await get(
-    db,
-    `
-    SELECT data_json
-    FROM slide_documents
-    WHERE id = ?
-    `,
-    [slideId],
-  );
-  if (!slideRow) return null;
-  return normalizeSlidePayload(parseJson(slideRow.data_json, {}));
-};
+const loadMaps = async (ctx) => {
+  const metadataByTag = await readSpaceMetadataMap(ctx);
+  ctx.slideMap = parseJsonText(metadataByTag.reactNoteSlideMap?.valueJson, {});
+  ctx.resourceMap = parseJsonText(metadataByTag.reactNoteResourceMap?.valueJson, {});
+  const slideItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  let isSlideMapChanged = false;
+  slideItems.forEach((item) => {
+    const objectId = `${item?.objectId ?? ''}`.trim();
+    const legacySlideIdRaw = `${item?.valueJson?.legacySlideId ?? ''}`.trim();
+    const legacySlideId = legacySlideIdRaw || `slide_${objectId.slice(-8)}`;
+    if (!objectId) return;
+    const currentObjectId = `${ctx.slideMap[legacySlideId] ?? ''}`.trim();
+    if (!currentObjectId) {
+      ctx.slideMap[legacySlideId] = objectId;
+      isSlideMapChanged = true;
+      return;
+    }
+    if (currentObjectId === objectId) return;
+    const duplicateSlideId = `${legacySlideId}__${objectId.slice(-6)}`;
+    if (`${ctx.slideMap[duplicateSlideId] ?? ''}`.trim() === objectId) return;
+    ctx.slideMap[duplicateSlideId] = objectId;
+    isSlideMapChanged = true;
+  });
+  if (isSlideMapChanged || (slideItems.length > 0 && Object.keys(ctx.slideMap ?? {}).length <= 0)) {
+    await upsertSpaceMetadataJson(ctx, 'reactNoteSlideMap', ctx.slideMap);
+  }
 
-const listSlides = async (db) => {
-  const rows = await all(
-    db,
-    `
-    SELECT id, data_json
-    FROM slide_documents
-    ORDER BY created_at ASC, id ASC
-    `,
-  );
-  return rows.map((row) => {
-    const data = parseJson(row.data_json, {});
-    return {
-      id: row.id,
-      name: data?.name ?? 'Untitled',
+  const resourceMetaItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.resourceMeta);
+  let isResourceMapChanged = false;
+  resourceMetaItems.forEach((item) => {
+    const payload = item?.valueJson ?? {};
+    const legacyResourceId = `${payload?.legacyResourceId ?? ''}`.trim();
+    const contentObjectId = `${payload?.contentObjectId ?? ''}`.trim();
+    const resourceType = `${payload?.resourceType ?? payload?.kind ?? ''}`.trim().toLowerCase();
+    const kind = resourceType === 'bytes' ? 'bytes' : 'text';
+    const metaObjectId = `${item?.objectId ?? ''}`.trim();
+    if (!legacyResourceId || !contentObjectId || !metaObjectId) return;
+    const current = ctx.resourceMap?.[legacyResourceId] ?? null;
+    if (
+      current &&
+      `${current.contentObjectId ?? ''}`.trim() === contentObjectId &&
+      `${current.metaObjectId ?? ''}`.trim() === metaObjectId &&
+      `${current.kind ?? ''}`.trim() === kind
+    ) {
+      return;
+    }
+    ctx.resourceMap[legacyResourceId] = {
+      kind,
+      contentObjectId,
+      metaObjectId,
     };
+    isResourceMapChanged = true;
+  });
+  if (isResourceMapChanged || (resourceMetaItems.length > 0 && Object.keys(ctx.resourceMap ?? {}).length <= 0)) {
+    await upsertSpaceMetadataJson(ctx, 'reactNoteResourceMap', ctx.resourceMap);
+  }
+};
+
+const persistMaps = async (ctx) => {
+  await upsertSpaceMetadataJson(ctx, 'reactNoteSlideMap', ctx.slideMap);
+  await upsertSpaceMetadataJson(ctx, 'reactNoteResourceMap', ctx.resourceMap);
+};
+
+const resolveSpaceIdByName = async (ctx) => {
+  const findData = await requestObjectStorage(ctx, 'GET', '/api/space/find-by-name', {
+    query: { name: ctx.spaceName },
+  });
+  const spaceId = `${findData?.spaceId ?? ''}`.trim();
+  if (!spaceId) {
+    throw new Error(`space not found by name: ${ctx.spaceName}`);
+  }
+  ctx.spaceId = spaceId;
+  ctx.info.spaceId = spaceId;
+};
+
+const ensureBackendStoreReady = async (ctx) => {
+  if (ctx.spaceId) return;
+  await requestObjectStorage(ctx, 'GET', '/api/health/ping');
+  await resolveSpaceIdByName(ctx);
+  await loadMaps(ctx);
+};
+
+const createObject = async (ctx, dataType, type, values) => {
+  const data = await requestObjectStorage(ctx, 'POST', '/api/object/create', {
+    body: {
+      spaceId: ctx.spaceId,
+      dataType,
+      type,
+      ...values,
+    },
+  });
+  return `${data?.objectId ?? ''}`;
+};
+
+const updateObject = async (ctx, dataType, objectId, type, values, isDeletePreviousData = true) => {
+  await requestObjectStorage(ctx, 'POST', '/api/object/update', {
+    body: {
+      spaceId: ctx.spaceId,
+      dataType,
+      objectId,
+      type,
+      isDeletePreviousData,
+      ...values,
+    },
   });
 };
 
-const insertSeedSlideIfNeeded = async (db) => {
-  const row = await get(db, 'SELECT COUNT(1) AS count_value FROM slide_documents');
-  const isSeeded = (row?.count_value ?? 0) > 0;
-  if (isSeeded) return;
-  const seedDocument = createSeedSlideDocument();
-  await insertOrUpdateSlideDocument(db, seedDocument.id, seedDocument.data);
+const getObject = async (ctx, dataType, objectId) => {
+  return requestObjectStorage(ctx, 'GET', '/api/object/get', {
+    query: {
+      spaceId: ctx.spaceId,
+      dataType,
+      objectId,
+    },
+  });
 };
 
-const initBackendStore = async (db) => {
-  const hasDataJsonColumn = await hasColumn(db, 'slide_documents', 'data_json');
-  if (!hasDataJsonColumn) {
-    await resetTablesForSchemaMigration(db);
-  }
-  await applySchema(db);
-  await migrateResourceKindToTypeIfNeeded(db);
-  await insertSeedSlideIfNeeded(db);
+const deleteObjects = async (ctx, dataType, objectIds) => {
+  if (!Array.isArray(objectIds) || objectIds.length <= 0) return;
+  await requestObjectStorage(ctx, 'POST', '/api/object/delete', {
+    body: {
+      spaceId: ctx.spaceId,
+      dataType,
+      objectIds,
+    },
+  });
 };
 
-const createSlide = async (db, requestedName) => {
-  let slideId = generateTypedId('sld');
-  let existingSlide = await get(db, 'SELECT id FROM slide_documents WHERE id = ?', [slideId]);
-  while (existingSlide) {
-    slideId = generateTypedId('sld');
-    existingSlide = await get(db, 'SELECT id FROM slide_documents WHERE id = ?', [slideId]);
-  }
+const getSlideObjectId = (ctx, slideId) => `${ctx.slideMap?.[slideId] ?? ''}`.trim();
 
-  const firstPageId = generateTypedId('pag', 8);
-  const name = (requestedName ?? '').trim() || 'Untitled';
+const getSlideSnapshotById = async (ctx, slideId) => {
+  const objectId = getSlideObjectId(ctx, slideId);
+  if (!objectId) return null;
+  let row;
+  try {
+    row = await getObject(ctx, 'json', objectId);
+  } catch (error) {
+    const messageText = `${error instanceof Error ? error.message : error}`;
+    if (messageText.includes('object not found')) {
+      delete ctx.slideMap[slideId];
+      await persistMaps(ctx);
+      return null;
+    }
+    throw error;
+  }
+  const slideData = normalizeSlidePayload(row?.valueJson ?? {}, 'Untitled');
+  const hasPageData = Object.keys(slideData?.pageDataById ?? {}).length > 0;
+  if (hasPageData) {
+    return slideData;
+  }
+  const pageIds = Array.isArray(slideData?.metadata?.pageIds) ? slideData.metadata.pageIds.map((id) => `${id}`) : [];
+  if (pageIds.length <= 0) {
+    return slideData;
+  }
+  const pageItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.page);
+  const pageDataById = {};
+  pageItems.forEach((item) => {
+    const payload = item?.valueJson ?? {};
+    const pageId = `${payload?.legacyPageId ?? ''}`.trim();
+    if (!pageId || !pageIds.includes(pageId)) return;
+    pageDataById[pageId] = cloneData(payload?.pageData ?? {});
+  });
+  slideData.pageDataById = pageDataById;
+
+  const containerIds = new Set();
+  Object.values(pageDataById).forEach((pageData) => {
+    (pageData?.containerIds ?? []).forEach((containerId) => {
+      const normalizedContainerId = `${containerId ?? ''}`.trim();
+      if (normalizedContainerId) containerIds.add(normalizedContainerId);
+    });
+  });
+  const containerItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.container);
+  const containerDataById = {};
+  containerItems.forEach((item) => {
+    const payload = item?.valueJson ?? {};
+    const containerId = `${payload?.legacyContainerId ?? ''}`.trim();
+    if (!containerId || !containerIds.has(containerId)) return;
+    containerDataById[containerId] = cloneData(payload?.containerData ?? {});
+  });
+  slideData.containerDataById = containerDataById;
+
+  const compIds = new Set();
+  Object.values(containerDataById).forEach((containerData) => {
+    const compId = `${containerData?.compId ?? ''}`.trim();
+    if (compId) compIds.add(compId);
+  });
+  const componentItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.component);
+  const compDataById = {};
+  componentItems.forEach((item) => {
+    const payload = item?.valueJson ?? {};
+    const compId = `${payload?.legacyCompId ?? ''}`.trim();
+    if (!compId || !compIds.has(compId)) return;
+    compDataById[compId] = cloneData(payload?.compData ?? {});
+  });
+  slideData.compDataById = compDataById;
+  return slideData;
+};
+
+const saveSlideSnapshotById = async (ctx, slideId, slideData) => {
+  const normalizedData = normalizeSlidePayload(slideData);
   const payload = {
-    name,
-    metadata: {
-      pageIds: [firstPageId],
-      currentPageId: firstPageId,
-      aspectRatio: { x: 16, y: 9 },
-    },
-    pageDataById: {
-      [firstPageId]: {
-        id: firstPageId,
-        containerIds: [],
-      },
-    },
-    containerDataById: {},
-    compDataById: {},
+    legacySlideId: slideId,
+    ...normalizedData,
   };
-
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, payload);
-  });
-  return { id: slideId, name, data: payload };
-};
-
-const renameSlide = async (db, slideId, name) => {
-  const nextName = (name ?? '').trim();
-  if (!nextName) return { ok: false, message: 'name is required' };
-  const row = await get(
-    db,
-    `
-    SELECT data_json, created_at
-    FROM slide_documents
-    WHERE id = ?
-    `,
-    [slideId],
-  );
-  if (!row) {
-    return { ok: false, message: 'slide not found' };
+  const objectId = getSlideObjectId(ctx, slideId);
+  if (objectId) {
+    await updateObject(ctx, 'json', objectId, TYPE_CODE.slide, { valueJson: payload }, true);
+    return objectId;
   }
-  const data = normalizeSlidePayload(parseJson(row.data_json, {}));
-  data.name = nextName;
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, data, row.created_at);
-  });
-  return { ok: true };
-};
-
-const getSlideSnapshot = async (db, slideId) => {
-  const snapshot = await buildSlideSnapshot(db, slideId);
-  if (!snapshot) return { ok: false, message: 'slide not found' };
-  return { ok: true, data: snapshot };
+  const nextObjectId = await createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: payload });
+  ctx.slideMap[slideId] = nextObjectId;
+  await persistMaps(ctx);
+  return nextObjectId;
 };
 
 const collectResourceIdsFromCompData = (value, output = new Set()) => {
@@ -255,10 +365,7 @@ const collectResourceIdsFromCompData = (value, output = new Set()) => {
   }
   if (typeof value === 'object') {
     Object.entries(value).forEach(([key, nextValue]) => {
-      if (
-        typeof nextValue === 'string' &&
-        (key === 'resourceId' || key.endsWith('ResourceId'))
-      ) {
+      if (typeof nextValue === 'string' && (key === 'resourceId' || key.endsWith('ResourceId'))) {
         output.add(nextValue);
       }
       collectResourceIdsFromCompData(nextValue, output);
@@ -275,139 +382,72 @@ const collectResourceIdsFromSlideData = (slideData) => {
   return output;
 };
 
-const isResourceUsedByAnySlide = async (db, resourceId) => {
-  const rows = await all(db, 'SELECT data_json FROM slide_documents');
-  for (const row of rows) {
-    const slideData = normalizeSlidePayload(parseJson(row.data_json, {}));
-    const resourceIds = collectResourceIdsFromSlideData(slideData);
-    if (resourceIds.has(resourceId)) return true;
-  }
-  return false;
+const initBackendStore = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  if (Object.keys(ctx.slideMap).length > 0) return;
+  const seed = createSeedSlideDocument();
+  await saveSlideSnapshotById(ctx, seed.id, seed.data);
 };
 
-const cleanupResourcesIfUnused = async (db, candidateResourceIds = []) => {
-  for (const resourceId of candidateResourceIds) {
-    if (!resourceId) continue;
-    const isUsed = await isResourceUsedByAnySlide(db, resourceId);
-    if (isUsed) continue;
-    await run(db, 'DELETE FROM slide_resources WHERE id = ?', [resourceId]);
-  }
-};
-
-const getCompResourceIds = (compEntry) => {
-  return Array.from(collectResourceIdsFromCompData(compEntry?.compData ?? {}));
-};
-
-const deleteComponentFromSlideData = (slideData, compId) => {
-  const nextSlideData = normalizeSlidePayload(cloneData(slideData));
-  const compEntry = nextSlideData.compDataById?.[compId];
-  if (!compEntry) {
-    return { ok: false, message: 'component not found', resourceIds: [] };
-  }
-  const resourceIds = getCompResourceIds(compEntry);
-
-  delete nextSlideData.compDataById[compId];
-  const removedContainerIds = [];
-  Object.entries(nextSlideData.containerDataById ?? {}).forEach(([containerId, containerData]) => {
-    if (containerData?.compId !== compId) return;
-    removedContainerIds.push(containerId);
-    delete nextSlideData.containerDataById[containerId];
-  });
-
-  Object.values(nextSlideData.pageDataById ?? {}).forEach((pageData) => {
-    pageData.containerIds = (pageData.containerIds ?? []).filter((containerId) => {
-      return !removedContainerIds.includes(containerId);
+const listSlides = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  const slideIds = Object.keys(ctx.slideMap ?? {}).sort();
+  const slides = [];
+  for (const slideId of slideIds) {
+    const slideData = await getSlideSnapshotById(ctx, slideId);
+    if (!slideData) continue;
+    slides.push({
+      id: slideId,
+      name: `${slideData?.name ?? 'Untitled'}`,
     });
-  });
-
-  return { ok: true, slideData: nextSlideData, resourceIds };
-};
-
-const deleteContainerFromSlideData = (slideData, containerId) => {
-  const nextSlideData = normalizeSlidePayload(cloneData(slideData));
-  const containerData = nextSlideData.containerDataById?.[containerId];
-  if (!containerData) {
-    return { ok: false, message: 'container not found', resourceIds: [] };
   }
-  delete nextSlideData.containerDataById[containerId];
-  Object.values(nextSlideData.pageDataById ?? {}).forEach((pageData) => {
-    pageData.containerIds = (pageData.containerIds ?? []).filter((id) => id !== containerId);
-  });
+  return slides;
+};
 
-  const compId = containerData.compId ?? '';
-  const isCompStillUsed = Object.values(nextSlideData.containerDataById ?? {}).some((entry) => {
-    return entry?.compId === compId;
-  });
-  let resourceIds = [];
-  if (!isCompStillUsed && compId && nextSlideData.compDataById?.[compId]) {
-    resourceIds = getCompResourceIds(nextSlideData.compDataById[compId]);
-    delete nextSlideData.compDataById[compId];
+const createSlide = async (ctx, requestedName) => {
+  await ensureBackendStoreReady(ctx);
+  let slideId = generateTypedId('sld');
+  while (ctx.slideMap?.[slideId]) {
+    slideId = generateTypedId('sld');
   }
-  return { ok: true, slideData: nextSlideData, resourceIds };
+  const firstPageId = generateTypedId('pag', 8);
+  const name = `${requestedName ?? ''}`.trim() || 'Untitled';
+  const payload = {
+    name,
+    metadata: {
+      pageIds: [firstPageId],
+      currentPageId: firstPageId,
+      aspectRatio: { x: 16, y: 9 },
+    },
+    pageDataById: {
+      [firstPageId]: {
+        id: firstPageId,
+        containerIds: [],
+      },
+    },
+    containerDataById: {},
+    compDataById: {},
+  };
+  await saveSlideSnapshotById(ctx, slideId, payload);
+  return { id: slideId, name, data: payload };
 };
 
-const deletePageFromSlideData = (slideData, pageId) => {
-  const nextSlideData = normalizeSlidePayload(cloneData(slideData));
-  const pageData = nextSlideData.pageDataById?.[pageId];
-  if (!pageData) {
-    return { ok: false, message: 'page not found', resourceIds: [] };
-  }
-  const containerIds = [...(pageData.containerIds ?? [])];
-  delete nextSlideData.pageDataById[pageId];
-  nextSlideData.metadata.pageIds = (nextSlideData.metadata.pageIds ?? []).filter((id) => id !== pageId);
-
-  const candidateCompIds = new Set();
-  containerIds.forEach((containerId) => {
-    const containerData = nextSlideData.containerDataById?.[containerId];
-    if (!containerData) return;
-    if (containerData.compId) candidateCompIds.add(containerData.compId);
-    delete nextSlideData.containerDataById[containerId];
-  });
-
-  const resourceIds = [];
-  candidateCompIds.forEach((compId) => {
-    const isCompStillUsed = Object.values(nextSlideData.containerDataById ?? {}).some((entry) => {
-      return entry?.compId === compId;
-    });
-    if (isCompStillUsed) return;
-    if (!nextSlideData.compDataById?.[compId]) return;
-    resourceIds.push(...getCompResourceIds(nextSlideData.compDataById[compId]));
-    delete nextSlideData.compDataById[compId];
-  });
-
-  const nextPageIds = nextSlideData.metadata.pageIds ?? [];
-  if (!nextPageIds.includes(nextSlideData.metadata.currentPageId)) {
-    nextSlideData.metadata.currentPageId = nextPageIds[0] ?? '';
-  }
-  return { ok: true, slideData: nextSlideData, resourceIds };
+const renameSlide = async (ctx, slideId, name) => {
+  await ensureBackendStoreReady(ctx);
+  const nextName = `${name ?? ''}`.trim();
+  if (!nextName) return { ok: false, message: 'name is required' };
+  const slideData = await getSlideSnapshotById(ctx, slideId);
+  if (!slideData) return { ok: false, message: 'slide not found' };
+  slideData.name = nextName;
+  await saveSlideSnapshotById(ctx, slideId, slideData);
+  return { ok: true };
 };
 
-const getDirtyIds = (dirtyMap) => {
-  return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);
-};
-
-const isDirtyStateEmpty = (dirtyState) => {
-  if (!dirtyState) return true;
-  return (
-    getDirtyIds(dirtyState.updatedContainerIds).length === 0 &&
-    getDirtyIds(dirtyState.updatedCompIds).length === 0 &&
-    getDirtyIds(dirtyState.createdContainerIds).length === 0 &&
-    getDirtyIds(dirtyState.deletedContainerIds).length === 0 &&
-    getDirtyIds(dirtyState.createdCompIds).length === 0 &&
-    getDirtyIds(dirtyState.deletedCompIds).length === 0
-  );
-};
-
-const isMetadataDirty = (dirtyPageStateById) => {
-  return Object.values(dirtyPageStateById ?? {}).some((dirtyState) => {
-    return Boolean(dirtyState?.updatedContainerIds?.__metadata__);
-  });
-};
-
-const sanitizeContainerDataForPersist = (containerData) => {
-  const nextContainerData = cloneData(containerData ?? {});
-  delete nextContainerData.containerSize;
-  return nextContainerData;
+const getSlideSnapshot = async (ctx, slideId) => {
+  await ensureBackendStoreReady(ctx);
+  const data = await getSlideSnapshotById(ctx, slideId);
+  if (!data) return { ok: false, message: 'slide not found' };
+  return { ok: true, data };
 };
 
 const applyDirtyPatchToSlideData = (previousData, payload, dirtyPageStateById) => {
@@ -415,11 +455,11 @@ const applyDirtyPatchToSlideData = (previousData, payload, dirtyPageStateById) =
   const runtimePageDataById = payload?.pageDataById ?? {};
   const runtimeContainerDataById = payload?.containerDataById ?? {};
   const runtimeCompDataById = payload?.compDataById ?? {};
+  const isMetadataDirty = Object.values(dirtyPageStateById ?? {}).some((dirtyState) => Boolean(dirtyState?.updatedContainerIds?.__metadata__));
 
-  if (isMetadataDirty(dirtyPageStateById)) {
-    const nextMetadata = cloneData(payload?.metadata ?? nextData.metadata);
-    nextData.metadata = nextMetadata;
-    const nextPageIds = Array.isArray(nextMetadata?.pageIds) ? nextMetadata.pageIds : [];
+  if (isMetadataDirty) {
+    nextData.metadata = cloneData(payload?.metadata ?? nextData.metadata);
+    const nextPageIds = Array.isArray(nextData?.metadata?.pageIds) ? nextData.metadata.pageIds : [];
     const pageIdSet = new Set(nextPageIds);
     Object.keys(nextData.pageDataById ?? {}).forEach((pageId) => {
       if (pageIdSet.has(pageId)) return;
@@ -429,297 +469,269 @@ const applyDirtyPatchToSlideData = (previousData, payload, dirtyPageStateById) =
       const runtimePageData = runtimePageDataById?.[pageId];
       if (runtimePageData) {
         nextData.pageDataById[pageId] = cloneData(runtimePageData);
-        return;
+      } else if (!nextData.pageDataById?.[pageId]) {
+        nextData.pageDataById[pageId] = { id: pageId, containerIds: [] };
       }
-      if (nextData.pageDataById?.[pageId]) return;
-      nextData.pageDataById[pageId] = {
-        id: pageId,
-        containerIds: [],
-      };
     });
   }
 
   Object.keys(dirtyPageStateById ?? {}).forEach((pageId) => {
     const dirtyState = dirtyPageStateById?.[pageId] ?? {};
-    if (isDirtyStateEmpty(dirtyState)) return;
-    const runtimePageData = runtimePageDataById[pageId];
-    if (runtimePageData) {
-      nextData.pageDataById[pageId] = cloneData(runtimePageData);
-    }
-
-    getDirtyIds(dirtyState.updatedContainerIds).forEach((containerId) => {
+    const runtimePageData = runtimePageDataById?.[pageId];
+    if (!runtimePageData) return;
+    nextData.pageDataById[pageId] = cloneData(runtimePageData);
+    Object.keys(dirtyState.updatedContainerIds ?? {}).filter((id) => dirtyState.updatedContainerIds[id]).forEach((containerId) => {
       if (containerId === '__metadata__') return;
-      const containerData = runtimeContainerDataById[containerId];
-      if (!containerData) return;
-      nextData.containerDataById[containerId] = sanitizeContainerDataForPersist(containerData);
+      if (!runtimeContainerDataById[containerId]) return;
+      nextData.containerDataById[containerId] = cloneData(runtimeContainerDataById[containerId]);
+      delete nextData.containerDataById[containerId]?.containerSize;
     });
-    getDirtyIds(dirtyState.createdContainerIds).forEach((containerId) => {
-      const containerData = runtimeContainerDataById[containerId];
-      if (!containerData) return;
-      nextData.containerDataById[containerId] = sanitizeContainerDataForPersist(containerData);
+    Object.keys(dirtyState.createdContainerIds ?? {}).filter((id) => dirtyState.createdContainerIds[id]).forEach((containerId) => {
+      if (!runtimeContainerDataById[containerId]) return;
+      nextData.containerDataById[containerId] = cloneData(runtimeContainerDataById[containerId]);
+      delete nextData.containerDataById[containerId]?.containerSize;
     });
-    getDirtyIds(dirtyState.deletedContainerIds).forEach((containerId) => {
+    Object.keys(dirtyState.deletedContainerIds ?? {}).filter((id) => dirtyState.deletedContainerIds[id]).forEach((containerId) => {
       delete nextData.containerDataById[containerId];
     });
-
-    getDirtyIds(dirtyState.updatedCompIds).forEach((compId) => {
-      const compData = runtimeCompDataById[compId];
-      if (!compData) return;
-      nextData.compDataById[compId] = cloneData(compData);
+    Object.keys(dirtyState.updatedCompIds ?? {}).filter((id) => dirtyState.updatedCompIds[id]).forEach((compId) => {
+      if (runtimeCompDataById[compId]) nextData.compDataById[compId] = cloneData(runtimeCompDataById[compId]);
     });
-    getDirtyIds(dirtyState.createdCompIds).forEach((compId) => {
-      const compData = runtimeCompDataById[compId];
-      if (!compData) return;
-      nextData.compDataById[compId] = cloneData(compData);
+    Object.keys(dirtyState.createdCompIds ?? {}).filter((id) => dirtyState.createdCompIds[id]).forEach((compId) => {
+      if (runtimeCompDataById[compId]) nextData.compDataById[compId] = cloneData(runtimeCompDataById[compId]);
     });
-    getDirtyIds(dirtyState.deletedCompIds).forEach((compId) => {
+    Object.keys(dirtyState.deletedCompIds ?? {}).filter((id) => dirtyState.deletedCompIds[id]).forEach((compId) => {
       delete nextData.compDataById[compId];
     });
   });
-
   return nextData;
 };
 
-const saveDirtySlide = async (db, slideId, payload) => {
-  const slideRow = await get(
-    db,
-    `
-    SELECT data_json, created_at
-    FROM slide_documents
-    WHERE id = ?
-    `,
-    [slideId],
-  );
-  if (!slideRow) {
-    return { ok: false, message: 'slide not found', savedPageIds: [] };
-  }
-
+const saveDirtySlide = async (ctx, slideId, payload) => {
+  await ensureBackendStoreReady(ctx);
+  const slideData = await getSlideSnapshotById(ctx, slideId);
+  if (!slideData) return { ok: false, message: 'slide not found', savedPageIds: [] };
   const dirtyPageStateById = payload?.dirtyPageStateById ?? {};
   const savedPageIds = Object.keys(dirtyPageStateById).filter((pageId) => {
-    const dirtyState = dirtyPageStateById[pageId] ?? {};
-    return (
-      getDirtyIds(dirtyState.updatedContainerIds).length > 0 ||
-      getDirtyIds(dirtyState.updatedCompIds).length > 0 ||
-      getDirtyIds(dirtyState.createdContainerIds).length > 0 ||
-      getDirtyIds(dirtyState.deletedContainerIds).length > 0 ||
-      getDirtyIds(dirtyState.createdCompIds).length > 0 ||
-      getDirtyIds(dirtyState.deletedCompIds).length > 0
-    );
+    const d = dirtyPageStateById[pageId] ?? {};
+    return Object.values(d.updatedContainerIds ?? {}).some(Boolean)
+      || Object.values(d.updatedCompIds ?? {}).some(Boolean)
+      || Object.values(d.createdContainerIds ?? {}).some(Boolean)
+      || Object.values(d.deletedContainerIds ?? {}).some(Boolean)
+      || Object.values(d.createdCompIds ?? {}).some(Boolean)
+      || Object.values(d.deletedCompIds ?? {}).some(Boolean);
   });
-
-  if (savedPageIds.length === 0) {
-    return { ok: true, savedPageIds: [] };
-  }
-
-  const previousData = normalizeSlidePayload(parseJson(slideRow.data_json, {}));
-  const nextData = applyDirtyPatchToSlideData(previousData, payload, dirtyPageStateById);
-
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, nextData, slideRow.created_at);
-  });
-
+  if (savedPageIds.length <= 0) return { ok: true, savedPageIds: [] };
+  const nextData = applyDirtyPatchToSlideData(slideData, payload, dirtyPageStateById);
+  await saveSlideSnapshotById(ctx, slideId, nextData);
   return { ok: true, savedPageIds };
 };
 
-const createResource = async (db, kind) => {
-  if (kind !== 'bytes' && kind !== 'text') {
-    return { ok: false, message: 'invalid resource kind' };
-  }
+const createResource = async (ctx, kind) => {
+  await ensureBackendStoreReady(ctx);
+  if (kind !== 'bytes' && kind !== 'text') return { ok: false, message: 'invalid resource kind' };
   let resourceId = generateTypedId('res');
-  let row = await get(db, 'SELECT id FROM slide_resources WHERE id = ?', [resourceId]);
-  while (row) {
+  while (ctx.resourceMap?.[resourceId]) {
     resourceId = generateTypedId('res');
-    row = await get(db, 'SELECT id FROM slide_resources WHERE id = ?', [resourceId]);
   }
-  const timestamp = nowIso();
-  await run(
-    db,
-    `
-    INSERT INTO slide_resources (id, type, data_bytes, data_text, created_at, updated_at)
-    VALUES (?, ?, NULL, NULL, ?, ?)
-    `,
-    [resourceId, kind, timestamp, timestamp],
-  );
+  const contentObjectId = kind === 'bytes'
+    ? await createObject(ctx, 'bytes', TYPE_CODE.resourceContentBytes, { valueBase64: '' })
+    : await createObject(ctx, 'text', TYPE_CODE.resourceContentText, { valueText: '' });
+  const metaObjectId = await createObject(ctx, 'json', TYPE_CODE.resourceMeta, {
+    valueJson: {
+      legacyResourceId: resourceId,
+      kind,
+      contentObjectId,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    },
+  });
+  ctx.resourceMap[resourceId] = { kind, contentObjectId, metaObjectId };
+  await persistMaps(ctx);
   return { ok: true, resourceId, kind };
 };
 
-const parseBase64Payload = (value) => {
-  const payload = `${value ?? ''}`;
-  const commaIndex = payload.indexOf(',');
-  const base64 = commaIndex >= 0 ? payload.slice(commaIndex + 1) : payload;
-  return base64.trim();
-};
-
-const updateResourceBytes = async (db, resourceId, base64) => {
-  const bytes = Buffer.from(parseBase64Payload(base64), 'base64');
-  const result = await run(
-    db,
-    `
-    UPDATE slide_resources
-    SET type = 'bytes', data_bytes = ?, data_text = NULL, updated_at = ?
-    WHERE id = ?
-    `,
-    [bytes, nowIso(), resourceId],
-  );
-  if ((result?.changes ?? 0) === 0) {
-    return { ok: false, message: 'resource not found' };
-  }
+const updateResourceBytes = async (ctx, resourceId, base64) => {
+  await ensureBackendStoreReady(ctx);
+  const mapping = ctx.resourceMap?.[resourceId];
+  if (!mapping) return { ok: false, message: 'resource not found' };
+  await updateObject(ctx, 'bytes', mapping.contentObjectId, TYPE_CODE.resourceContentBytes, { valueBase64: `${base64 ?? ''}` }, true);
   return { ok: true };
 };
 
-const getResourceBytes = async (db, resourceId) => {
-  const row = await get(
-    db,
-    `
-    SELECT data_bytes
-    FROM slide_resources
-    WHERE id = ?
-    `,
-    [resourceId],
-  );
-  if (!row) return { ok: false, message: 'resource not found' };
-  if (!row.data_bytes) return { ok: false, message: 'resource byte data is empty' };
-  const base64 = Buffer.from(row.data_bytes).toString('base64');
-  return { ok: true, base64 };
+const getResourceBytes = async (ctx, resourceId) => {
+  await ensureBackendStoreReady(ctx);
+  const mapping = ctx.resourceMap?.[resourceId];
+  if (!mapping) return { ok: false, message: 'resource not found' };
+  const row = await getObject(ctx, 'bytes', mapping.contentObjectId);
+  return { ok: true, base64: `${row?.valueBase64 ?? ''}` };
 };
 
-const updateResourceText = async (db, resourceId, text) => {
-  const result = await run(
-    db,
-    `
-    UPDATE slide_resources
-    SET type = 'text', data_text = ?, data_bytes = NULL, updated_at = ?
-    WHERE id = ?
-    `,
-    [`${text ?? ''}`, nowIso(), resourceId],
-  );
-  if ((result?.changes ?? 0) === 0) {
-    return { ok: false, message: 'resource not found' };
-  }
+const updateResourceText = async (ctx, resourceId, text) => {
+  await ensureBackendStoreReady(ctx);
+  const mapping = ctx.resourceMap?.[resourceId];
+  if (!mapping) return { ok: false, message: 'resource not found' };
+  await updateObject(ctx, 'text', mapping.contentObjectId, TYPE_CODE.resourceContentText, { valueText: `${text ?? ''}` }, true);
   return { ok: true };
 };
 
-const getResourceText = async (db, resourceId) => {
-  const row = await get(
-    db,
-    `
-    SELECT data_text
-    FROM slide_resources
-    WHERE id = ?
-    `,
-    [resourceId],
-  );
-  if (!row) return { ok: false, message: 'resource not found' };
-  return { ok: true, text: row.data_text ?? '' };
+const getResourceText = async (ctx, resourceId) => {
+  await ensureBackendStoreReady(ctx);
+  const mapping = ctx.resourceMap?.[resourceId];
+  if (!mapping) return { ok: false, message: 'resource not found' };
+  const row = await getObject(ctx, 'text', mapping.contentObjectId);
+  return { ok: true, text: `${row?.valueText ?? ''}` };
 };
 
-const deleteResource = async (db, resourceId) => {
-  const isUsed = await isResourceUsedByAnySlide(db, resourceId);
-  if (isUsed) {
+const isResourceUsedByAnySlide = async (ctx, resourceId) => {
+  const slideIds = Object.keys(ctx.slideMap ?? {});
+  for (const slideId of slideIds) {
+    const slideData = await getSlideSnapshotById(ctx, slideId);
+    if (!slideData) continue;
+    if (collectResourceIdsFromSlideData(slideData).has(resourceId)) return true;
+  }
+  return false;
+};
+
+const deleteResource = async (ctx, resourceId) => {
+  await ensureBackendStoreReady(ctx);
+  const mapping = ctx.resourceMap?.[resourceId];
+  if (!mapping) return { ok: true };
+  if (await isResourceUsedByAnySlide(ctx, resourceId)) {
     return { ok: false, message: 'resource is still referenced by components' };
   }
-  await run(db, 'DELETE FROM slide_resources WHERE id = ?', [resourceId]);
+  await deleteObjects(ctx, 'json', [mapping.metaObjectId]);
+  if (mapping.kind === 'bytes') {
+    await deleteObjects(ctx, 'bytes', [mapping.contentObjectId]);
+  } else {
+    await deleteObjects(ctx, 'text', [mapping.contentObjectId]);
+  }
+  delete ctx.resourceMap[resourceId];
+  await persistMaps(ctx);
   return { ok: true };
 };
 
-const deleteSlide = async (db, slideId) => {
-  const slideRow = await get(db, 'SELECT data_json FROM slide_documents WHERE id = ?', [slideId]);
-  if (!slideRow) return { ok: false, message: 'slide not found' };
-  const slideData = normalizeSlidePayload(parseJson(slideRow.data_json, {}));
-  const resourceIds = Array.from(collectResourceIdsFromSlideData(slideData));
-  await runInTransaction(db, async (txDb) => {
-    await run(txDb, 'DELETE FROM slide_documents WHERE id = ?', [slideId]);
-  });
-  await cleanupResourcesIfUnused(db, resourceIds);
+const deleteSlide = async (ctx, slideId) => {
+  await ensureBackendStoreReady(ctx);
+  const objectId = getSlideObjectId(ctx, slideId);
+  if (!objectId) return { ok: false, message: 'slide not found' };
+  const slideData = await getSlideSnapshotById(ctx, slideId);
+  const resourceIds = Array.from(collectResourceIdsFromSlideData(slideData ?? {}));
+  await deleteObjects(ctx, 'json', [objectId]);
+  delete ctx.slideMap[slideId];
+  await persistMaps(ctx);
+  for (const resourceId of resourceIds) {
+    if (await isResourceUsedByAnySlide(ctx, resourceId)) continue;
+    await deleteResource(ctx, resourceId);
+  }
   return { ok: true };
 };
 
-const deletePage = async (db, slideId, pageId) => {
-  const row = await get(db, 'SELECT data_json, created_at FROM slide_documents WHERE id = ?', [slideId]);
-  if (!row) return { ok: false, message: 'slide not found' };
-  const slideData = normalizeSlidePayload(parseJson(row.data_json, {}));
-  const result = deletePageFromSlideData(slideData, pageId);
-  if (!result.ok) return { ok: false, message: result.message };
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, result.slideData, row.created_at);
-  });
-  await cleanupResourcesIfUnused(db, result.resourceIds);
+const deletePage = async (ctx, slideId, pageId) => {
+  const snapshotResult = await getSlideSnapshot(ctx, slideId);
+  if (!snapshotResult.ok) return snapshotResult;
+  const slideData = normalizeSlidePayload(snapshotResult.data);
+  const pageData = slideData.pageDataById?.[pageId];
+  if (!pageData) return { ok: false, message: 'page not found' };
+  delete slideData.pageDataById[pageId];
+  slideData.metadata.pageIds = (slideData.metadata.pageIds ?? []).filter((id) => id !== pageId);
+  if (!slideData.metadata.pageIds.includes(slideData.metadata.currentPageId)) {
+    slideData.metadata.currentPageId = slideData.metadata.pageIds[0] ?? '';
+  }
+  await saveSlideSnapshotById(ctx, slideId, slideData);
   return { ok: true };
 };
 
-const deleteContainer = async (db, slideId, containerId) => {
-  const row = await get(db, 'SELECT data_json, created_at FROM slide_documents WHERE id = ?', [slideId]);
-  if (!row) return { ok: false, message: 'slide not found' };
-  const slideData = normalizeSlidePayload(parseJson(row.data_json, {}));
-  const result = deleteContainerFromSlideData(slideData, containerId);
-  if (!result.ok) return { ok: false, message: result.message };
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, result.slideData, row.created_at);
+const deleteContainer = async (ctx, slideId, containerId) => {
+  const snapshotResult = await getSlideSnapshot(ctx, slideId);
+  if (!snapshotResult.ok) return snapshotResult;
+  const slideData = normalizeSlidePayload(snapshotResult.data);
+  const containerData = slideData.containerDataById?.[containerId];
+  if (!containerData) return { ok: false, message: 'container not found' };
+  delete slideData.containerDataById[containerId];
+  Object.values(slideData.pageDataById ?? {}).forEach((pageData) => {
+    pageData.containerIds = (pageData.containerIds ?? []).filter((id) => id !== containerId);
   });
-  await cleanupResourcesIfUnused(db, result.resourceIds);
+  await saveSlideSnapshotById(ctx, slideId, slideData);
   return { ok: true };
 };
 
-const deleteComponent = async (db, slideId, compId) => {
-  const row = await get(db, 'SELECT data_json, created_at FROM slide_documents WHERE id = ?', [slideId]);
-  if (!row) return { ok: false, message: 'slide not found' };
-  const slideData = normalizeSlidePayload(parseJson(row.data_json, {}));
-  const result = deleteComponentFromSlideData(slideData, compId);
-  if (!result.ok) return { ok: false, message: result.message };
-  await runInTransaction(db, async (txDb) => {
-    await insertOrUpdateSlideDocument(txDb, slideId, result.slideData, row.created_at);
-  });
-  await cleanupResourcesIfUnused(db, result.resourceIds);
+const deleteComponent = async (ctx, slideId, compId) => {
+  const snapshotResult = await getSlideSnapshot(ctx, slideId);
+  if (!snapshotResult.ok) return snapshotResult;
+  const slideData = normalizeSlidePayload(snapshotResult.data);
+  if (!slideData.compDataById?.[compId]) return { ok: false, message: 'component not found' };
+  delete slideData.compDataById[compId];
+  await saveSlideSnapshotById(ctx, slideId, slideData);
   return { ok: true };
 };
 
-const reinitDatabase = async (db) => {
-  await runInTransaction(db, async (txDb) => {
-    await run(txDb, 'DELETE FROM slide_documents');
-    const seedDocument = createSeedSlideDocument();
-    await insertOrUpdateSlideDocument(txDb, seedDocument.id, seedDocument.data);
+const reinitDatabase = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  const slideIds = Object.keys(ctx.slideMap ?? {});
+  for (const slideId of slideIds) {
+    await deleteSlide(ctx, slideId);
+  }
+  Object.keys(ctx.resourceMap ?? {}).forEach((resourceId) => {
+    delete ctx.resourceMap[resourceId];
   });
-  const slides = await listSlides(db);
+  ctx.slideMap = {};
+  await persistMaps(ctx);
+  const seed = createSeedSlideDocument();
+  await saveSlideSnapshotById(ctx, seed.id, seed.data);
+  const slides = await listSlides(ctx);
   return { ok: true, slides };
 };
 
-const dumpDatabaseSnapshot = async (db) => {
-  const slides = await all(
-    db,
-    `
-    SELECT id, data_json, created_at, updated_at
-    FROM slide_documents
-    ORDER BY created_at ASC, id ASC
-    `,
-  );
-  const resources = await all(
-    db,
-    `
-    SELECT id, type, data_text, data_bytes, created_at, updated_at
-    FROM slide_resources
-    ORDER BY created_at ASC, id ASC
-    `,
-  );
+const dumpDatabaseSnapshot = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  const slides = [];
+  const resources = [];
+  for (const [slideId, objectId] of Object.entries(ctx.slideMap ?? {})) {
+    const row = await getObject(ctx, 'json', objectId);
+    slides.push({
+      id: slideId,
+      data: row?.valueJson ?? {},
+      objectId,
+    });
+  }
+  for (const [resourceId, mapping] of Object.entries(ctx.resourceMap ?? {})) {
+    const row = await getObject(ctx, mapping.kind === 'bytes' ? 'bytes' : 'text', mapping.contentObjectId);
+    resources.push({
+      id: resourceId,
+      kind: mapping.kind,
+      contentObjectId: mapping.contentObjectId,
+      data_text: mapping.kind === 'text' ? `${row?.valueText ?? ''}` : '',
+      data_bytes_base64: mapping.kind === 'bytes' ? `${row?.valueBase64 ?? ''}` : '',
+    });
+  }
   return {
     dumpedAt: nowIso(),
-    slides: slides.map((row) => ({
-      id: row.id,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      data: parseJson(row.data_json, {}),
-    })),
-    resources: resources.map((row) => ({
-      id: row.id,
-      type: row.type,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      data_text: row.data_text ?? '',
-      data_bytes_base64: row.data_bytes ? Buffer.from(row.data_bytes).toString('base64') : '',
-    })),
+    slides,
+    resources,
+  };
+};
+
+const createObjectStorageContext = () => {
+  const serviceUrl = `${OBJECT_STORAGE_SERVICE_URL ?? ''}`.trim().replace(/\/+$/, '');
+  const spaceName = `${OBJECT_STORAGE_SPACE_NAME ?? ''}`.trim();
+  return {
+    serviceUrl,
+    spaceName,
+    spaceId: '',
+    slideMap: {},
+    resourceMap: {},
+    info: {
+      serviceUrl,
+      spaceName,
+      spaceId: '',
+    },
   };
 };
 
 export {
+  createObjectStorageContext,
+  ensureBackendStoreReady,
   initBackendStore,
   listSlides,
   createSlide,

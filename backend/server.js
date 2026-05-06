@@ -3,9 +3,9 @@ import cors from 'cors';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDatabase, close } from './db.js';
-import { DATABASE_PRESET_KEY, DATABASES } from './config.js';
 import {
+  createObjectStorageContext,
+  ensureBackendStoreReady,
   createSlide,
   createResource,
   deleteComponent,
@@ -45,144 +45,93 @@ const getTimestampToken = () => {
 };
 
 const createSlideBackendApp = async () => {
-  let currentDatabaseKey = DATABASE_PRESET_KEY;
-  let db = await openDatabase(DATABASES[currentDatabaseKey]);
-  const databaseErrorByKey = {};
-  let isDatabaseSwitching = false;
+  const storeContext = createObjectStorageContext();
+  let startupErrorText = '';
+  try {
+    await initBackendStore(storeContext);
+  } catch (error) {
+    startupErrorText = error instanceof Error ? error.message : 'failed to initialize object-storage backend';
+  }
 
-  const toDatabaseItem = (databaseKey, options = {}) => {
-    const preset = DATABASES[databaseKey] ?? {};
-    const errorMessage = `${databaseErrorByKey[databaseKey] ?? ''}`.trim();
+  const toObjectStorageItem = (options = {}) => {
+    const errorMessage = `${options.errorMessage ?? ''}`.trim();
     return {
-      key: databaseKey,
-      label: databaseKey.replace(/^DATABASE_/, '').toLowerCase(),
-      databaseName: `${preset.DATABASE_NAME ?? ''}`,
-      host: `${preset.IP ?? ''}`,
-      port: Number(preset.PORT ?? 0),
-      isCurrent: databaseKey === currentDatabaseKey,
+      key: 'OBJECT_STORAGE',
+      label: 'object-storage',
+      databaseName: storeContext.info.spaceName,
+      host: storeContext.info.serviceUrl,
+      port: 0,
+      isCurrent: true,
       isConnected: options.isConnected === true,
       isInError: Boolean(errorMessage),
       errorMessage,
     };
   };
 
-  const requestTestDatabase = async (databaseKey) => {
-    const preset = DATABASES[databaseKey];
-    if (!preset) {
-      return { ok: false, message: 'Unknown database preset key' };
-    }
-    try {
-      const testDb = await openDatabase(preset);
-      await close(testDb);
-      databaseErrorByKey[databaseKey] = '';
-      return { ok: true, message: '' };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to connect database';
-      databaseErrorByKey[databaseKey] = message;
-      return { ok: false, message };
-    }
-  };
-
-  await initBackendStore(db);
-
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));
 
-  app.get('/api/slide/health', (_req, res) => {
-    res.json({ ok: true, db: db.info });
+  app.get('/api/slide/health', async (_req, res) => {
+    try {
+      await ensureBackendStoreReady(storeContext);
+      res.json({ ok: true, db: storeContext.info });
+    } catch (error) {
+      res.status(503).json({
+        ok: false,
+        message: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage service'),
+        db: storeContext.info,
+      });
+    }
   });
 
-  app.get('/api/slide/database/presets', (_req, res) => {
-    const databaseItems = Object.keys(DATABASES).map((databaseKey) => {
-      return toDatabaseItem(databaseKey, {
-        isConnected: databaseKey === currentDatabaseKey,
+  app.get('/api/slide/database/presets', async (_req, res) => {
+    let item = toObjectStorageItem({ isConnected: true });
+    try {
+      await ensureBackendStoreReady(storeContext);
+      item = toObjectStorageItem({ isConnected: true });
+    } catch (error) {
+      item = toObjectStorageItem({
+        isConnected: false,
+        errorMessage: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
       });
-    });
+    }
     res.json({
       ok: true,
-      currentDatabaseKey,
-      databaseItems,
+      currentDatabaseKey: 'OBJECT_STORAGE',
+      databaseItems: [item],
     });
   });
 
   app.post('/api/slide/database/test', async (req, res) => {
-    const databaseKey = `${req.body?.databaseKey ?? ''}`;
-    const result = await requestTestDatabase(databaseKey);
-    if (!result.ok) {
-      res.status(400).json({
-        ok: false,
-        message: result.message,
-        databaseItem: toDatabaseItem(databaseKey, { isConnected: false }),
-      });
-      return;
-    }
-    res.json({
-      ok: true,
-      databaseItem: toDatabaseItem(databaseKey, { isConnected: databaseKey === currentDatabaseKey }),
-    });
-  });
-
-  app.post('/api/slide/database/switch', async (req, res) => {
-    const databaseKey = `${req.body?.databaseKey ?? ''}`;
-    if (!DATABASES[databaseKey]) {
-      res.status(400).json({
-        ok: false,
-        message: 'Unknown database preset key',
-      });
-      return;
-    }
-    if (isDatabaseSwitching) {
-      res.status(409).json({
-        ok: false,
-        message: 'Database switching is busy',
-      });
-      return;
-    }
-    if (databaseKey === currentDatabaseKey) {
-      res.json({
-        ok: true,
-        currentDatabaseKey,
-        databaseItem: toDatabaseItem(databaseKey, { isConnected: true }),
-      });
-      return;
-    }
-    isDatabaseSwitching = true;
-    let nextDb = null;
     try {
-      nextDb = await openDatabase(DATABASES[databaseKey]);
-      await initBackendStore(nextDb);
-      const prevDb = db;
-      db = nextDb;
-      nextDb = null;
-      currentDatabaseKey = databaseKey;
-      databaseErrorByKey[databaseKey] = '';
-      await close(prevDb);
+      await ensureBackendStoreReady(storeContext);
       res.json({
         ok: true,
-        currentDatabaseKey,
-        databaseItem: toDatabaseItem(databaseKey, { isConnected: true }),
+        databaseItem: toObjectStorageItem({ isConnected: true }),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to switch database';
-      databaseErrorByKey[databaseKey] = message;
-      if (nextDb) {
-        await close(nextDb).catch(() => {});
-      }
-      res.status(500).json({
+      res.status(400).json({
         ok: false,
-        message,
-        currentDatabaseKey,
-        databaseItem: toDatabaseItem(databaseKey, { isConnected: false }),
+        message: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
+        databaseItem: toObjectStorageItem({
+          isConnected: false,
+          errorMessage: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
+        }),
       });
-    } finally {
-      isDatabaseSwitching = false;
     }
+  });
+
+  app.post('/api/slide/database/switch', async (_req, res) => {
+    res.status(400).json({
+      ok: false,
+      message: 'database switch is disabled: react-note uses object-storage service by space name',
+    });
   });
 
   app.get('/api/slide/slides', async (_req, res) => {
     try {
-      const slides = await listSlides(db);
+      const slides = await listSlides(storeContext);
       res.json({ ok: true, slides });
     } catch (error) {
       res.status(500).json({
@@ -194,7 +143,7 @@ const createSlideBackendApp = async () => {
 
   app.post('/api/slide/slides', async (req, res) => {
     try {
-      const slide = await createSlide(db, req.body?.name ?? '');
+      const slide = await createSlide(storeContext, req.body?.name ?? '');
       res.json({ ok: true, slide });
     } catch (error) {
       res.status(500).json({
@@ -206,7 +155,7 @@ const createSlideBackendApp = async () => {
 
   app.delete('/api/slide/slides/:slideId', async (req, res) => {
     try {
-      const result = await deleteSlide(db, req.params.slideId);
+      const result = await deleteSlide(storeContext, req.params.slideId);
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -222,7 +171,7 @@ const createSlideBackendApp = async () => {
 
   app.patch('/api/slide/slides/:slideId', async (req, res) => {
     try {
-      const result = await renameSlide(db, req.params.slideId, req.body?.name ?? '');
+      const result = await renameSlide(storeContext, req.params.slideId, req.body?.name ?? '');
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -238,7 +187,7 @@ const createSlideBackendApp = async () => {
 
   app.get('/api/slide/slides/:slideId/data', async (req, res) => {
     try {
-      const result = await getSlideSnapshot(db, req.params.slideId);
+      const result = await getSlideSnapshot(storeContext, req.params.slideId);
       if (!result.ok) {
         res.status(404).json(result);
         return;
@@ -254,7 +203,7 @@ const createSlideBackendApp = async () => {
 
   app.post('/api/slide/slides/:slideId/save-dirty', async (req, res) => {
     try {
-      const result = await saveDirtySlide(db, req.params.slideId, req.body ?? {});
+      const result = await saveDirtySlide(storeContext, req.params.slideId, req.body ?? {});
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -270,7 +219,7 @@ const createSlideBackendApp = async () => {
 
   app.delete('/api/slide/slides/:slideId/pages/:pageId', async (req, res) => {
     try {
-      const result = await deletePage(db, req.params.slideId, req.params.pageId);
+      const result = await deletePage(storeContext, req.params.slideId, req.params.pageId);
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -286,7 +235,7 @@ const createSlideBackendApp = async () => {
 
   app.delete('/api/slide/slides/:slideId/containers/:containerId', async (req, res) => {
     try {
-      const result = await deleteContainer(db, req.params.slideId, req.params.containerId);
+      const result = await deleteContainer(storeContext, req.params.slideId, req.params.containerId);
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -302,7 +251,7 @@ const createSlideBackendApp = async () => {
 
   app.delete('/api/slide/slides/:slideId/components/:compId', async (req, res) => {
     try {
-      const result = await deleteComponent(db, req.params.slideId, req.params.compId);
+      const result = await deleteComponent(storeContext, req.params.slideId, req.params.compId);
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -318,7 +267,7 @@ const createSlideBackendApp = async () => {
 
   app.post('/api/slide/resources', async (req, res) => {
     try {
-      const result = await createResource(db, req.body?.kind ?? '');
+      const result = await createResource(storeContext, req.body?.kind ?? '');
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -334,7 +283,7 @@ const createSlideBackendApp = async () => {
 
   app.put('/api/slide/resources/:resourceId/bytes', async (req, res) => {
     try {
-      const result = await updateResourceBytes(db, req.params.resourceId, req.body?.base64 ?? '');
+      const result = await updateResourceBytes(storeContext, req.params.resourceId, req.body?.base64 ?? '');
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -350,7 +299,7 @@ const createSlideBackendApp = async () => {
 
   app.get('/api/slide/resources/:resourceId/bytes', async (req, res) => {
     try {
-      const result = await getResourceBytes(db, req.params.resourceId);
+      const result = await getResourceBytes(storeContext, req.params.resourceId);
       if (!result.ok) {
         res.status(404).json(result);
         return;
@@ -366,7 +315,7 @@ const createSlideBackendApp = async () => {
 
   app.put('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
-      const result = await updateResourceText(db, req.params.resourceId, req.body?.text ?? '');
+      const result = await updateResourceText(storeContext, req.params.resourceId, req.body?.text ?? '');
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -382,7 +331,7 @@ const createSlideBackendApp = async () => {
 
   app.get('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
-      const result = await getResourceText(db, req.params.resourceId);
+      const result = await getResourceText(storeContext, req.params.resourceId);
       if (!result.ok) {
         res.status(404).json(result);
         return;
@@ -398,7 +347,7 @@ const createSlideBackendApp = async () => {
 
   app.delete('/api/slide/resources/:resourceId', async (req, res) => {
     try {
-      const result = await deleteResource(db, req.params.resourceId);
+      const result = await deleteResource(storeContext, req.params.resourceId);
       if (!result.ok) {
         res.status(400).json(result);
         return;
@@ -414,7 +363,7 @@ const createSlideBackendApp = async () => {
 
   app.post('/api/slide/admin/reinit-database', async (_req, res) => {
     try {
-      const result = await reinitDatabase(db);
+      const result = await reinitDatabase(storeContext);
       res.json(result);
     } catch (error) {
       res.status(500).json({
@@ -429,7 +378,7 @@ const createSlideBackendApp = async () => {
       const timestamp = getTimestampToken();
       const fileName = `slide-db-dump-${timestamp}.json`;
       const filePath = resolve(backendDumpDir, fileName);
-      const payload = await dumpDatabaseSnapshot(db);
+      const payload = await dumpDatabaseSnapshot(storeContext);
       mkdirSync(backendDumpDir, { recursive: true });
       writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
       res.json({
@@ -468,9 +417,7 @@ const createSlideBackendApp = async () => {
     });
   }
 
-  app.closeBackendDb = async () => {
-    await close(db);
-  };
+  app.closeBackendDb = async () => {};
 
   return app;
 };

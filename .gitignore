@@ -14,7 +14,7 @@ migrate/
 dist-ssr
 *.local
 
-/src/migrate
+/migration
 
 # Editor directories and files
 .vscode/*

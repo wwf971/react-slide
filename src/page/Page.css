@@ -199,13 +199,29 @@
 .slide-toolbar-page {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 5px;
   border: 1px solid #d3d3d3;
   background: #ffffff;
   border-radius: 2px;
   box-sizing: border-box;
+}
+
+.slide-toolbar-status {
+  max-width: 300px;
+  min-height: 26px;
+  line-height: 26px;
+  font-size: 11px;
+  color: #c22b2b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  visibility: hidden;
+}
+
+.slide-toolbar-status.is-visible {
+  visibility: visible;
 }
 
 .slide-toolbar-page-nav {
@@ -234,7 +250,7 @@
 
 .slide-toolbar-page-value {
   font-size: 12px;
-  min-width: 18px;
+  min-width: 14px;
   text-align: center;
 }
 

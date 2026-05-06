@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { DownIcon } from '@wwf971/react-comp-misc/Icon';
-import KeyValues from '@wwf971/react-comp-misc/KeyValues';
+import { DbConnectionCard } from '@wwf971/react-comp-misc';
 import './DbSwitcher.css';
 
 const renderIcon = (IconComp: any, width: number, height: number) => {
@@ -111,62 +111,42 @@ const DbSwitcher = ({
             {filteredDatabaseItems.length > 0 ? (
               filteredDatabaseItems.map((entry: any) => {
                 const isCurrent = entry.key === currentDatabaseKey;
-                const keyValues = [
-                  { key: 'key', value: entry.key },
-                  { key: 'host', value: entry.host },
-                  { key: 'port', value: `${entry.port}` },
-                  { key: 'database', value: entry.databaseName },
-                  { key: 'status', value: entry.isInError ? 'error' : 'ok' },
-                ];
                 return (
-                  <div
-                    key={entry.key}
-                    className={`db-switch-card ${isCurrent ? 'is-selected' : ''} ${entry.isInError ? 'is-error' : ''}`}
-                  >
-                    <div className="db-switch-card-header">
-                      <div className="db-switch-card-title-wrap">
-                        <span className="db-switch-card-title">{entry.label}</span>
-                        {isCurrent ? <span className="db-switch-card-current">current</span> : null}
-                      </div>
-                      <div className="db-switch-card-actions">
-                        <button
-                          className="db-switch-card-action-btn"
-                          type="button"
-                          disabled={
-                            isCurrent ||
-                            isDatabaseLoading ||
-                            isDatabaseSwitching ||
-                            isDatabaseTesting
-                          }
-                          onClick={() => {
-                            onSwitchDatabase?.(entry.key);
-                            setIsDropdownOpen(false);
-                          }}
-                        >
-                          Switch
-                        </button>
-                        <button
-                          className="db-switch-card-action-btn"
-                          type="button"
-                          disabled={isDatabaseLoading || isDatabaseSwitching || isDatabaseTesting}
-                          onClick={() => {
-                            onTestDatabase?.(entry.key);
-                          }}
-                        >
-                          {isDatabaseTesting && testingDatabaseKey === entry.key ? 'Testing' : 'Test'}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="db-switch-card-kv-wrap">
-                      <KeyValues
-                        data={keyValues}
-                        isEditable={false}
-                        isKeyEditable={false}
-                        isValueEditable={false}
-                        alignColumn
-                        keyColWidth="70px"
-                      />
-                    </div>
+                  <div key={entry.key} className={`db-switch-card ${isCurrent ? 'is-selected' : ''} ${entry.isInError ? 'is-error' : ''}`}>
+                    <DbConnectionCard
+                      titleText={entry.label}
+                      statusTagText={isCurrent ? 'current' : ''}
+                      keyValuesData={[
+                        { key: 'key', value: entry.key },
+                        { key: 'host', value: entry.host },
+                        { key: 'port', value: `${entry.port}` },
+                        { key: 'database', value: entry.databaseName },
+                        { key: 'status', value: entry.isInError ? 'error' : 'ok' },
+                      ]}
+                      actionItems={[
+                        {
+                          id: 'switch',
+                          labelText: isDatabaseSwitching && !isCurrent ? 'Switching' : 'Switch',
+                          isDisabled: isCurrent || isDatabaseLoading || isDatabaseSwitching || isDatabaseTesting,
+                        },
+                        {
+                          id: 'test',
+                          labelText: isDatabaseTesting && testingDatabaseKey === entry.key ? 'Testing' : 'Test',
+                          isDisabled: isDatabaseLoading || isDatabaseSwitching || isDatabaseTesting,
+                        },
+                      ]}
+                      isLocked={isDatabaseLoading || isDatabaseSwitching || isDatabaseTesting}
+                      onAction={async (actionId) => {
+                        if (actionId === 'switch') {
+                          await onSwitchDatabase?.(entry.key);
+                          setIsDropdownOpen(false);
+                          return;
+                        }
+                        if (actionId === 'test') {
+                          await onTestDatabase?.(entry.key);
+                        }
+                      }}
+                    />
                     {entry.errorMessage ? (
                       <div className="db-switch-card-error">{entry.errorMessage}</div>
                     ) : null}

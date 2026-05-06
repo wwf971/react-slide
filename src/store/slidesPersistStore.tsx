@@ -111,7 +111,14 @@ class SlidesPersistStore {
   async listSlides() {
     const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
     if (!result.isOk) {
-      return { ok: false, slides: this.slideItems, message: 'Failed to load slides' };
+      const backendMessage = `${result.payload?.message ?? ''}`.trim();
+      return {
+        ok: false,
+        slides: this.slideItems,
+        message: backendMessage
+          ? `${backendMessage}. Local Demo is displayed.`
+          : 'Slide list could not be loaded. Local Demo is displayed.',
+      };
     }
     const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
     this.slideItems = slides.map((slide: any) => ({
