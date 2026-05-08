@@ -320,6 +320,26 @@ class SlidesPersistStore {
     return { ok: true };
   }
 
+  async getSlideGroupOwnerMap() {
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/groups/overview`);
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, ownerGroupIdBySlideId: {} };
+    }
+    const slideGroups = Array.isArray(result.payload?.slideGroups) ? result.payload.slideGroups : [];
+    const ownerGroupIdBySlideId = {};
+    slideGroups.forEach((groupItem: any) => {
+      const groupId = `${groupItem?.id ?? ''}`.trim();
+      if (!groupId) return;
+      const slides = Array.isArray(groupItem?.slides) ? groupItem.slides : [];
+      slides.forEach((slideItem: any) => {
+        const slideId = `${slideItem?.slideId ?? ''}`.trim();
+        if (!slideId) return;
+        ownerGroupIdBySlideId[slideId] = groupId;
+      });
+    });
+    return { ok: true, ownerGroupIdBySlideId };
+  }
+
   async dumpDatabaseSnapshot() {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/admin/dump-database`,

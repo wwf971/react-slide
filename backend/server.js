@@ -1,27 +1,34 @@
 import express from 'express';
 import cors from 'cors';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BACKEND_PORT } from './config.js';
 import {
   createObjectStorageContext,
   ensureBackendStoreReady,
   createSlide,
+  createSlideGroup,
   createResource,
   deleteComponent,
   deleteContainer,
   deletePage,
   deleteResource,
+  deleteSlideGroup,
   deleteSlide,
+  getSlideGroupsOverview,
+  listSlideGroups,
   getSlideSnapshot,
   getResourceBytes,
   getResourceText,
   initBackendStore,
   listSlides,
+  renameSlideGroup,
   reinitDatabase,
   renameSlide,
   saveDirtySlide,
   dumpDatabaseSnapshot,
+  updateSlideGroupSlides,
   updateResourceBytes,
   updateResourceText,
 } from './store.js';
@@ -29,9 +36,38 @@ import {
 const currentFilePath = fileURLToPath(import.meta.url);
 const backendDir = dirname(currentFilePath);
 const projectRootDir = resolve(backendDir, '..');
-const frontendDistDir = resolve(projectRootDir, 'dist');
+const frontendDistDir = resolve(projectRootDir, 'frontend', 'dist');
 const frontendIndexPath = resolve(frontendDistDir, 'index.html');
 const backendDumpDir = resolve(projectRootDir, 'data-dumps');
+const FRONTEND_ROUTE_PATTERNS = [
+  /^\/overview\/?$/,
+  /^\/group\/[^/]+\/?$/,
+  /^\/slide\/[^/]+\/?$/,
+];
+
+const getFrontendRouteErrorPayload = () => {
+  return {
+    ok: false,
+    message: 'route not found',
+    guide: {
+      overview: '/overview/',
+      slide: '/slide/{slideId}',
+    },
+  };
+};
+
+const getIsFrontendRoutePath = (pathValue = '') => {
+  const pathText = `${pathValue ?? ''}`.trim();
+  if (!pathText) return false;
+  return FRONTEND_ROUTE_PATTERNS.some((pattern) => pattern.test(pathText));
+};
+
+const getGroupIdFromFrontendPath = (pathValue = '') => {
+  const pathText = `${pathValue ?? ''}`.trim();
+  const match = pathText.match(/^\/group\/([^/]+)\/?$/);
+  if (!match) return '';
+  return `${match[1] ?? ''}`.trim();
+};
 
 const getTimestampToken = () => {
   const now = new Date();
@@ -137,6 +173,110 @@ const createSlideBackendApp = async () => {
       res.status(500).json({
         ok: false,
         message: error instanceof Error ? error.message : 'failed to list slides',
+      });
+    }
+  });
+
+  app.get('/api/slide/groups/overview', async (_req, res) => {
+    try {
+      const data = await getSlideGroupsOverview(storeContext);
+      res.json({
+        ok: true,
+        ...data,
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to load slide-group overview',
+      });
+    }
+  });
+
+  app.get('/api/slide/groups', async (_req, res) => {
+    try {
+      const groups = await listSlideGroups(storeContext);
+      res.json({
+        ok: true,
+        groups: groups.map((group) => ({
+          id: group.id,
+          name: group.name,
+          slides: group.slides,
+          folderPaths: group.folderPaths,
+          slideNum: group.slideNum,
+        })),
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to list slide-groups',
+      });
+    }
+  });
+
+  app.post('/api/slide/groups', async (req, res) => {
+    try {
+      const group = await createSlideGroup(storeContext, req.body?.name ?? '');
+      res.json({
+        ok: true,
+        group,
+      });
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to create slide-group',
+      });
+    }
+  });
+
+  app.patch('/api/slide/groups/:groupId', async (req, res) => {
+    try {
+      const result = await renameSlideGroup(storeContext, req.params.groupId, req.body?.name ?? '');
+      if (!result.ok) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to rename slide-group',
+      });
+    }
+  });
+
+  app.put('/api/slide/groups/:groupId/slides', async (req, res) => {
+    try {
+      const result = await updateSlideGroupSlides(
+        storeContext,
+        req.params.groupId,
+        req.body?.slides ?? [],
+        req.body?.folderPaths
+      );
+      if (!result.ok) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to update slide-group slides',
+      });
+    }
+  });
+
+  app.delete('/api/slide/groups/:groupId', async (req, res) => {
+    try {
+      const result = await deleteSlideGroup(storeContext, req.params.groupId);
+      if (!result.ok) {
+        res.status(400).json(result);
+        return;
+      }
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to delete slide-group',
       });
     }
   });
@@ -396,8 +536,49 @@ const createSlideBackendApp = async () => {
   });
 
   if (existsSync(frontendIndexPath)) {
-    app.use(express.static(frontendDistDir));
-    app.use((req, res, next) => {
+    const frontendIndexHtml = readFileSync(frontendIndexPath, 'utf8');
+    const sendFrontendIndexHtml = (res) => {
+      res.type('html').send(frontendIndexHtml);
+    };
+    app.get(['/overview', '/overview/'], (_req, res) => {
+      sendFrontendIndexHtml(res);
+    });
+    app.get('/slide/:slideId', (_req, res) => {
+      sendFrontendIndexHtml(res);
+    });
+    app.get('/group/:groupId', async (req, res) => {
+      const groupId = `${req.params.groupId ?? ''}`.trim();
+      if (!groupId) {
+        res.status(404).json({
+          ok: false,
+          message: 'slide-group not found',
+        });
+        return;
+      }
+      try {
+        const groups = await listSlideGroups(storeContext);
+        const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
+        if (!isGroupFound) {
+          res.status(404).json({
+            ok: false,
+            message: `slide-group not found: ${groupId}`,
+          });
+          return;
+        }
+      } catch (error) {
+        res.status(500).json({
+          ok: false,
+          message: error instanceof Error ? error.message : 'failed to validate slide-group route',
+        });
+        return;
+      }
+      sendFrontendIndexHtml(res);
+    });
+    app.use(express.static(frontendDistDir, {
+      index: false,
+      fallthrough: true,
+    }));
+    app.use(async (req, res, next) => {
       if (req.path.startsWith('/api/slide')) {
         next();
         return;
@@ -406,10 +587,34 @@ const createSlideBackendApp = async () => {
         next();
         return;
       }
-      res.sendFile(frontendIndexPath);
+      if (getIsFrontendRoutePath(req.path)) {
+        const groupId = getGroupIdFromFrontendPath(req.path);
+        if (groupId) {
+          try {
+            const groups = await listSlideGroups(storeContext);
+            const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
+            if (!isGroupFound) {
+              res.status(404).json({
+                ok: false,
+                message: `slide-group not found: ${groupId}`,
+              });
+              return;
+            }
+          } catch (error) {
+            res.status(500).json({
+              ok: false,
+              message: error instanceof Error ? error.message : 'failed to validate slide-group route',
+            });
+            return;
+          }
+        }
+        sendFrontendIndexHtml(res);
+        return;
+      }
+      res.status(404).json(getFrontendRouteErrorPayload());
     });
   } else {
-    app.get('/', (_req, res) => {
+    app.get('*', (_req, res) => {
       res.status(503).json({
         ok: false,
         message: 'frontend build missing, run pnpm build',
@@ -424,7 +629,7 @@ const createSlideBackendApp = async () => {
 
 const startSlideBackendServer = async () => {
   const runtimeProcess = globalThis.process;
-  const port = Number(runtimeProcess?.env?.SLIDE_BACKEND_PORT ?? 5174);
+  const port = Number(runtimeProcess?.env?.SLIDE_BACKEND_PORT ?? BACKEND_PORT);
   const host = runtimeProcess?.env?.SLIDE_BACKEND_HOST ?? '0.0.0.0';
   const app = await createSlideBackendApp();
   const server = app.listen(port, host);
@@ -432,7 +637,9 @@ const startSlideBackendServer = async () => {
     console.info(`[slide-backend] listening on http://${host}:${port}`);
     console.info(`[slide-backend] local access: http://127.0.0.1:${port}`);
     if (existsSync(frontendIndexPath)) {
-      console.info(`[slide-backend] page: http://127.0.0.1:${port}/`);
+      console.info(`[slide-backend] overview: http://127.0.0.1:${port}/overview/`);
+      console.info(`[slide-backend] slide: http://127.0.0.1:${port}/slide/{slideId}`);
+      console.info(`[slide-backend] note: '/' returns JSON error`);
     } else {
       console.info('[slide-backend] frontend build missing, run: pnpm build');
     }

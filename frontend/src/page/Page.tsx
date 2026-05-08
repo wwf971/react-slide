@@ -13,7 +13,7 @@ const clamp = (value, min, max) => {
   return Math.min(max, Math.max(min, value));
 };
 
-const Slide = observer(({
+const Page = observer(({
   pageId,
   getComp,
   isPrevEnabled,
@@ -23,6 +23,10 @@ const Slide = observer(({
   onCreateNextPage,
   isFullWindow,
   onToggleFullWindow,
+  isEdgeNavVisible = true,
+  isFullWindowButtonVisible = true,
+  isPageResizeEnabled = true,
+  onPageSurfaceClick,
 }: any) => {
   const store = useSlidesStore();
   const containers = store.getPageContainers(pageId);
@@ -142,7 +146,7 @@ const Slide = observer(({
   };
 
   const requestSlideResizeByPointer = (event, dir) => {
-    if (isFullWindow || isReadOnly) return;
+    if (!isPageResizeEnabled || isFullWindow || isReadOnly) return;
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -278,6 +282,7 @@ const Slide = observer(({
           onPointerDown={(event) => {
             if (event.target !== event.currentTarget) return;
             store.setSlideSurfaceSelected();
+            onPageSurfaceClick?.();
           }}
           onPaste={(event) => {
             if (isReadOnly) return;
@@ -302,18 +307,22 @@ const Slide = observer(({
           onContextMenu={openContextMenu}
           onDoubleClick={requestCreateSwitcherCompByPoint}
         >
-          <PageEdgeNavControls
-            isPrevEnabled={isPrevEnabled}
-            isNextEnabled={isNextEnabled}
-            onGoPrev={onGoPrev}
-            onGoNext={onGoNext}
-            onCreateNextPage={onCreateNextPage}
-          />
-          <PageFullWindowButton
-            isFullWindow={isFullWindow}
-            onToggleFullWindow={onToggleFullWindow}
-          />
-          {store.isSlideSurfaceSelected && !isFullWindow && !isReadOnly
+          {isEdgeNavVisible ? (
+            <PageEdgeNavControls
+              isPrevEnabled={isPrevEnabled}
+              isNextEnabled={isNextEnabled}
+              onGoPrev={onGoPrev}
+              onGoNext={onGoNext}
+              onCreateNextPage={onCreateNextPage}
+            />
+          ) : null}
+          {isFullWindowButtonVisible ? (
+            <PageFullWindowButton
+              isFullWindow={isFullWindow}
+              onToggleFullWindow={onToggleFullWindow}
+            />
+          ) : null}
+          {isPageResizeEnabled && store.isSlideSurfaceSelected && !isFullWindow && !isReadOnly
             ? PAGE_HANDLE_DIRS.map((dir) => (
                 <button
                   key={dir}
@@ -377,4 +386,4 @@ const Slide = observer(({
   );
 });
 
-export default Slide;
+export default Page;

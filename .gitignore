@@ -9,12 +9,14 @@ lerna-debug.log*
 
 node_modules/
 dist/
+/frontend/dist/
 build/
 migrate/
 dist-ssr
 *.local
 
 /migration
+/deploy
 
 # Editor directories and files
 .vscode/*
@@ -28,4 +30,4 @@ dist-ssr
 *.sw?
 config.0.js
 *.sqlite
-/src/slides/database/*.sql
+/frontend/src/database/*.sql

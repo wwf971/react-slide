@@ -5,7 +5,14 @@ import Page from '../page/Page';
 import Header from '../layout/Header';
 import '../page/Page.css';
 
-const Slides = observer(({ store, backendStore, getComp }: any) => {
+const Slides = observer(({
+  store,
+  backendStore,
+  getComp,
+  requestedSlideId = '',
+  onCurrentSlideIdChange,
+  onRequestOpenGroupView,
+}: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
   const totalPage = store.getTotalPageIndex();
@@ -23,15 +30,70 @@ const Slides = observer(({ store, backendStore, getComp }: any) => {
   const isSettingBusy =
     isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPageDeleting || isPersisting;
   const [isFullWindow, setIsFullWindow] = useState(false);
+  const [ownerGroupIdBySlideId, setOwnerGroupIdBySlideId] = useState({});
 
   useEffect(() => {
+    if ((store.slideItems ?? []).length > 0) return;
     store.requestInitializeSlides();
-  }, [store]);
+  }, [store, store.slideItems?.length]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const loadOwnerMap = async () => {
+      const persistStore = store?.slidesPersistStore;
+      if (!persistStore?.getSlideGroupOwnerMap) return;
+      const result = await persistStore.getSlideGroupOwnerMap();
+      if (!result?.ok || isCancelled) return;
+      setOwnerGroupIdBySlideId(result.ownerGroupIdBySlideId ?? {});
+    };
+    loadOwnerMap();
+    return () => {
+      isCancelled = true;
+    };
+  }, [store, slideItems.length, currentSlideId]);
 
   useEffect(() => {
     if (!backendStore) return;
     backendStore.requestLoadDatabases();
   }, [backendStore]);
+
+  useEffect(() => {
+    const nextSlideId = `${requestedSlideId ?? ''}`.trim();
+    if (!nextSlideId) return;
+    const hasRequestedSlide = (slideItems ?? []).some((item: any) => {
+      return `${item?.id ?? ''}`.trim() === nextSlideId;
+    });
+    if (!hasRequestedSlide) return;
+    if (`${currentSlideId ?? ''}`.trim() === nextSlideId) return;
+    store.requestSwitchSlide(nextSlideId);
+  }, [requestedSlideId, slideItems, store]);
+
+  useEffect(() => {
+    const nextSlideId = `${requestedSlideId ?? ''}`.trim();
+    if (!nextSlideId) return;
+    if (isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPageDeleting || isPersisting) return;
+    const hasRequestedSlide = (slideItems ?? []).some((item: any) => {
+      return `${item?.id ?? ''}`.trim() === nextSlideId;
+    });
+    if (hasRequestedSlide) return;
+    store.requestInitializeSlides();
+  }, [
+    requestedSlideId,
+    slideItems,
+    isSlidesInitializing,
+    isSlideSwitching,
+    isSlideDeleting,
+    isPageDeleting,
+    isPersisting,
+    store,
+  ]);
+
+  useEffect(() => {
+    if (!onCurrentSlideIdChange) return;
+    const nextSlideId = `${currentSlideId ?? ''}`.trim();
+    if (!nextSlideId) return;
+    onCurrentSlideIdChange(nextSlideId);
+  }, [currentSlideId, onCurrentSlideIdChange]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -78,6 +140,7 @@ const Slides = observer(({ store, backendStore, getComp }: any) => {
 
   const prevPage = store.getPrevPageData(currentPageId);
   const nextPage = store.getNextPageData(currentPageId);
+  const currentGroupId = `${ownerGroupIdBySlideId?.[currentSlideId] ?? ''}`.trim();
 
   return (
     <SlideStoreProvider store={store}>
@@ -159,6 +222,11 @@ const Slides = observer(({ store, backendStore, getComp }: any) => {
           }}
           onMoveNextPage={() => {
             store.requestMoveCurrentPageByOffset(1);
+          }}
+          isViewInsideGroupButtonVisible={Boolean(currentGroupId)}
+          onViewInsideGroup={() => {
+            if (!currentGroupId || !currentSlideId) return;
+            onRequestOpenGroupView?.(currentGroupId, currentSlideId);
           }}
         />
         <div className="slide-system-canvas-wrap">

@@ -10,21 +10,12 @@ const TYPE_CODE = {
   resourceMeta: 5,
   resourceContentText: 6,
   resourceContentBytes: 7,
+  slideGroup: 8,
+  slideGroupMeta: 9,
 };
 
 const cloneData = (value) => JSON.parse(JSON.stringify(value ?? {}));
 const nowIso = () => new Date().toISOString();
-
-const generateRandomToken = (length = 10) => {
-  const chars = '0123456789abcdefghijklmnopqrstuvwxyz';
-  let output = '';
-  for (let i = 0; i < length; i += 1) {
-    output += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return output;
-};
-
-const generateTypedId = (typePrefix, tokenLength = 10) => `${typePrefix}-${generateRandomToken(tokenLength)}`;
 
 const requestObjectStorage = async (ctx, method, path, options = {}) => {
   const query = options.query ?? {};
@@ -82,6 +73,13 @@ const listAllObjectsByType = async (ctx, dataType, type) => {
 
 const parseJsonText = (value, fallbackValue) => {
   if (!value) return fallbackValue;
+  if (typeof value === 'object') {
+    try {
+      return cloneData(value);
+    } catch {
+      return fallbackValue;
+    }
+  }
   try {
     return JSON.parse(`${value}`);
   } catch {
@@ -141,67 +139,219 @@ const upsertSpaceMetadataJson = async (ctx, tag, valueJson) => {
   });
 };
 
-const loadMaps = async (ctx) => {
-  const metadataByTag = await readSpaceMetadataMap(ctx);
-  ctx.slideMap = parseJsonText(metadataByTag.reactNoteSlideMap?.valueJson, {});
-  ctx.resourceMap = parseJsonText(metadataByTag.reactNoteResourceMap?.valueJson, {});
-  const slideItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
-  let isSlideMapChanged = false;
-  slideItems.forEach((item) => {
-    const objectId = `${item?.objectId ?? ''}`.trim();
-    const legacySlideIdRaw = `${item?.valueJson?.legacySlideId ?? ''}`.trim();
-    const legacySlideId = legacySlideIdRaw || `slide_${objectId.slice(-8)}`;
-    if (!objectId) return;
-    const currentObjectId = `${ctx.slideMap[legacySlideId] ?? ''}`.trim();
-    if (!currentObjectId) {
-      ctx.slideMap[legacySlideId] = objectId;
-      isSlideMapChanged = true;
-      return;
-    }
-    if (currentObjectId === objectId) return;
-    const duplicateSlideId = `${legacySlideId}__${objectId.slice(-6)}`;
-    if (`${ctx.slideMap[duplicateSlideId] ?? ''}`.trim() === objectId) return;
-    ctx.slideMap[duplicateSlideId] = objectId;
-    isSlideMapChanged = true;
+const upsertSpaceMetadataText = async (ctx, tag, valueText) => {
+  await requestObjectStorage(ctx, 'POST', '/api/space/metadata/upsert', {
+    body: {
+      spaceId: ctx.spaceId,
+      tag,
+      valueType: 1,
+      valueText: `${valueText ?? ''}`,
+    },
   });
-  if (isSlideMapChanged || (slideItems.length > 0 && Object.keys(ctx.slideMap ?? {}).length <= 0)) {
-    await upsertSpaceMetadataJson(ctx, 'reactNoteSlideMap', ctx.slideMap);
-  }
+};
 
-  const resourceMetaItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.resourceMeta);
-  let isResourceMapChanged = false;
-  resourceMetaItems.forEach((item) => {
-    const payload = item?.valueJson ?? {};
-    const legacyResourceId = `${payload?.legacyResourceId ?? ''}`.trim();
-    const contentObjectId = `${payload?.contentObjectId ?? ''}`.trim();
-    const resourceType = `${payload?.resourceType ?? payload?.kind ?? ''}`.trim().toLowerCase();
-    const kind = resourceType === 'bytes' ? 'bytes' : 'text';
-    const metaObjectId = `${item?.objectId ?? ''}`.trim();
-    if (!legacyResourceId || !contentObjectId || !metaObjectId) return;
-    const current = ctx.resourceMap?.[legacyResourceId] ?? null;
-    if (
-      current &&
-      `${current.contentObjectId ?? ''}`.trim() === contentObjectId &&
-      `${current.metaObjectId ?? ''}`.trim() === metaObjectId &&
-      `${current.kind ?? ''}`.trim() === kind
-    ) {
-      return;
-    }
-    ctx.resourceMap[legacyResourceId] = {
-      kind,
-      contentObjectId,
-      metaObjectId,
-    };
-    isResourceMapChanged = true;
-  });
-  if (isResourceMapChanged || (resourceMetaItems.length > 0 && Object.keys(ctx.resourceMap ?? {}).length <= 0)) {
-    await upsertSpaceMetadataJson(ctx, 'reactNoteResourceMap', ctx.resourceMap);
-  }
+const loadMaps = async (ctx) => {
+  // Keep metadata loading for slide-group meta object only.
+  const metadataByTag = await readSpaceMetadataMap(ctx);
+  ctx.slideGroupMetaObjectId = `${metadataByTag.reactNoteSlideGroupMetaObjectId?.valueText ?? ''}`.trim();
 };
 
 const persistMaps = async (ctx) => {
-  await upsertSpaceMetadataJson(ctx, 'reactNoteSlideMap', ctx.slideMap);
-  await upsertSpaceMetadataJson(ctx, 'reactNoteResourceMap', ctx.resourceMap);
+  // slide/resource maps were removed. no-op to keep compatibility.
+  void ctx;
+};
+
+const normalizeFolderPath = (pathRaw) => {
+  const pathText = `${pathRaw ?? ''}`.trim();
+  const withoutPrefixSlash = pathText.replace(/^\/+/, '');
+  const withoutSuffixSlash = withoutPrefixSlash.replace(/\/+$/, '');
+  return withoutSuffixSlash
+    .split('/')
+    .filter(Boolean)
+    .join('/');
+};
+
+const normalizePermanentFolderPath = (pathRaw) => {
+  const normalizedPath = normalizeFolderPath(pathRaw);
+  if (!normalizedPath) return '';
+  return `${normalizedPath}/`;
+};
+
+const normalizeSlideGroupSlides = (slides) => {
+  if (!Array.isArray(slides)) return [];
+  const uniqueSlideMap = {};
+  const output = [];
+  slides.forEach((slideItem) => {
+    const slideId = `${slideItem?.slideId ?? ''}`.trim();
+    if (!slideId) return;
+    if (uniqueSlideMap[slideId]) return;
+    uniqueSlideMap[slideId] = true;
+    const pathWithoutSuffixSlash = normalizeFolderPath(slideItem?.path ?? '');
+    output.push({
+      slideId,
+      path: pathWithoutSuffixSlash,
+    });
+  });
+  return output;
+};
+
+const normalizeSlideGroupFolderPaths = (folderPathsRaw) => {
+  if (!Array.isArray(folderPathsRaw)) return [];
+  const seenMap = {};
+  const output = [];
+  folderPathsRaw.forEach((folderPathRaw) => {
+    const folderPath = normalizePermanentFolderPath(folderPathRaw);
+    if (!folderPath) return;
+    if (seenMap[folderPath]) return;
+    seenMap[folderPath] = true;
+    output.push(folderPath);
+  });
+  return output;
+};
+
+const normalizeSlideGroupPayload = (payload, fallbackGroupId = '') => {
+  const groupId = `${payload?.groupId ?? fallbackGroupId ?? ''}`.trim();
+  const name = `${payload?.name ?? ''}`.trim() || groupId || 'Untitled Group';
+  const slides = normalizeSlideGroupSlides(payload?.slides);
+  const folderPaths = normalizeSlideGroupFolderPaths(payload?.folderPaths);
+  return {
+    entityType: 'slide-group',
+    groupId,
+    name,
+    slides,
+    folderPaths,
+    createdAt: `${payload?.createdAt ?? ''}`.trim() || nowIso(),
+    updatedAt: `${payload?.updatedAt ?? ''}`.trim() || nowIso(),
+  };
+};
+
+const normalizeSlideGroupMetaPayload = (payload) => {
+  const groupIdListRaw = Array.isArray(payload?.slideGroupIdList) ? payload.slideGroupIdList : [];
+  const groupIdSeenMap = {};
+  const slideGroupIdList = [];
+  groupIdListRaw.forEach((groupIdRaw) => {
+    const groupId = `${groupIdRaw ?? ''}`.trim();
+    if (!groupId) return;
+    if (groupIdSeenMap[groupId]) return;
+    groupIdSeenMap[groupId] = true;
+    slideGroupIdList.push(groupId);
+  });
+  return {
+    entityType: 'slideGroupMeta',
+    slideGroupIdList,
+    updatedAt: nowIso(),
+  };
+};
+
+const ensureSlideGroupMetaObject = async (ctx) => {
+  const metadataByTag = await readSpaceMetadataMap(ctx);
+  let metaObjectId = `${metadataByTag.reactNoteSlideGroupMetaObjectId?.valueText ?? ''}`.trim();
+  let metaPayload = null;
+  if (metaObjectId) {
+    try {
+      const row = await getObject(ctx, 'json', metaObjectId);
+      metaPayload = normalizeSlideGroupMetaPayload(row?.valueJson ?? {});
+    } catch (_error) {
+      metaObjectId = '';
+      metaPayload = null;
+    }
+  }
+  if (!metaObjectId) {
+    metaPayload = normalizeSlideGroupMetaPayload({
+      entityType: 'slideGroupMeta',
+      slideGroupIdList: [],
+    });
+    metaObjectId = await createObject(ctx, 'json', TYPE_CODE.slideGroupMeta, {
+      valueJson: metaPayload,
+    });
+    await upsertSpaceMetadataText(ctx, 'reactNoteSlideGroupMetaObjectId', metaObjectId);
+  }
+  ctx.slideGroupMetaObjectId = metaObjectId;
+  return {
+    metaObjectId,
+    metaPayload,
+  };
+};
+
+const listSlideGroupRows = async (ctx) => {
+  const items = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slideGroup);
+  const output = [];
+  items.forEach((item) => {
+    const objectId = `${item?.objectId ?? ''}`.trim();
+    if (!objectId) return;
+    const payload = normalizeSlideGroupPayload(item?.valueJson ?? {});
+    if (!payload.groupId) return;
+    output.push({
+      objectId,
+      payload,
+    });
+  });
+  return output;
+};
+
+const listSlideGroups = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  const { metaObjectId, metaPayload } = await ensureSlideGroupMetaObject(ctx);
+  const metaGroupIds = Array.isArray(metaPayload?.slideGroupIdList) ? metaPayload.slideGroupIdList : [];
+  const groupRows = await listSlideGroupRows(ctx);
+  const groupRowMap = {};
+  groupRows.forEach((row) => {
+    groupRowMap[row.payload.groupId] = row;
+  });
+
+  const knownGroupIdMap = {};
+  const normalizedMetaGroupIds = [];
+  metaGroupIds.forEach((groupIdRaw) => {
+    const groupId = `${groupIdRaw ?? ''}`.trim();
+    if (!groupId) return;
+    if (!groupRowMap[groupId]) return;
+    if (knownGroupIdMap[groupId]) return;
+    knownGroupIdMap[groupId] = true;
+    normalizedMetaGroupIds.push(groupId);
+  });
+  groupRows.forEach((row) => {
+    const groupId = row.payload.groupId;
+    if (knownGroupIdMap[groupId]) return;
+    knownGroupIdMap[groupId] = true;
+    normalizedMetaGroupIds.push(groupId);
+  });
+
+  if (JSON.stringify(normalizedMetaGroupIds) !== JSON.stringify(metaGroupIds)) {
+    const nextMetaPayload = normalizeSlideGroupMetaPayload({
+      ...metaPayload,
+      slideGroupIdList: normalizedMetaGroupIds,
+    });
+    await updateObject(ctx, 'json', metaObjectId, TYPE_CODE.slideGroupMeta, {
+      valueJson: nextMetaPayload,
+    }, true);
+  }
+
+  return normalizedMetaGroupIds.map((groupId) => {
+    const row = groupRowMap[groupId];
+    return {
+      id: groupId,
+      name: row.payload.name,
+      slides: row.payload.slides,
+      folderPaths: row.payload.folderPaths,
+      slideNum: row.payload.slides.length,
+      createdAt: row.payload.createdAt,
+      updatedAt: row.payload.updatedAt,
+      objectId: row.objectId,
+    };
+  });
+};
+
+const getSlideGroupOwnershipMap = (slideGroups, ignoredGroupId = '') => {
+  const ownerBySlideId = {};
+  (slideGroups ?? []).forEach((slideGroup) => {
+    if (`${slideGroup?.id ?? ''}`.trim() === `${ignoredGroupId ?? ''}`.trim()) return;
+    (slideGroup?.slides ?? []).forEach((slideItem) => {
+      const slideId = `${slideItem?.slideId ?? ''}`.trim();
+      if (!slideId) return;
+      ownerBySlideId[slideId] = `${slideGroup?.id ?? ''}`;
+    });
+  });
+  return ownerBySlideId;
 };
 
 const resolveSpaceIdByName = async (ctx) => {
@@ -217,10 +367,13 @@ const resolveSpaceIdByName = async (ctx) => {
 };
 
 const ensureBackendStoreReady = async (ctx) => {
-  if (ctx.spaceId) return;
+  if (ctx.isReady) return;
   await requestObjectStorage(ctx, 'GET', '/api/health/ping');
-  await resolveSpaceIdByName(ctx);
+  if (!ctx.spaceId) {
+    await resolveSpaceIdByName(ctx);
+  }
   await loadMaps(ctx);
+  ctx.isReady = true;
 };
 
 const createObject = async (ctx, dataType, type, values) => {
@@ -269,21 +422,15 @@ const deleteObjects = async (ctx, dataType, objectIds) => {
   });
 };
 
-const getSlideObjectId = (ctx, slideId) => `${ctx.slideMap?.[slideId] ?? ''}`.trim();
-
 const getSlideSnapshotById = async (ctx, slideId) => {
-  const objectId = getSlideObjectId(ctx, slideId);
+  const objectId = `${slideId ?? ''}`.trim();
   if (!objectId) return null;
   let row;
   try {
     row = await getObject(ctx, 'json', objectId);
   } catch (error) {
-    const messageText = `${error instanceof Error ? error.message : error}`;
-    if (messageText.includes('object not found')) {
-      delete ctx.slideMap[slideId];
-      await persistMaps(ctx);
-      return null;
-    }
+    const messageText = `${error instanceof Error ? error.message : error}`.toLowerCase();
+    if (messageText.includes('object not found')) return null;
     throw error;
   }
   const slideData = normalizeSlidePayload(row?.valueJson ?? {}, 'Untitled');
@@ -341,19 +488,13 @@ const getSlideSnapshotById = async (ctx, slideId) => {
 
 const saveSlideSnapshotById = async (ctx, slideId, slideData) => {
   const normalizedData = normalizeSlidePayload(slideData);
-  const payload = {
-    legacySlideId: slideId,
-    ...normalizedData,
-  };
-  const objectId = getSlideObjectId(ctx, slideId);
+  const payload = { ...normalizedData };
+  const objectId = `${slideId ?? ''}`.trim();
   if (objectId) {
     await updateObject(ctx, 'json', objectId, TYPE_CODE.slide, { valueJson: payload }, true);
     return objectId;
   }
-  const nextObjectId = await createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: payload });
-  ctx.slideMap[slideId] = nextObjectId;
-  await persistMaps(ctx);
-  return nextObjectId;
+  return createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: payload });
 };
 
 const collectResourceIdsFromCompData = (value, output = new Set()) => {
@@ -384,14 +525,16 @@ const collectResourceIdsFromSlideData = (slideData) => {
 
 const initBackendStore = async (ctx) => {
   await ensureBackendStoreReady(ctx);
-  if (Object.keys(ctx.slideMap).length > 0) return;
+  const existingSlides = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  if (existingSlides.length > 0) return;
   const seed = createSeedSlideDocument();
-  await saveSlideSnapshotById(ctx, seed.id, seed.data);
+  await saveSlideSnapshotById(ctx, '', seed.data);
 };
 
 const listSlides = async (ctx) => {
   await ensureBackendStoreReady(ctx);
-  const slideIds = Object.keys(ctx.slideMap ?? {}).sort();
+  const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  const slideIds = slideRows.map((row) => `${row?.objectId ?? ''}`.trim()).filter(Boolean);
   const slides = [];
   for (const slideId of slideIds) {
     const slideData = await getSlideSnapshotById(ctx, slideId);
@@ -404,13 +547,171 @@ const listSlides = async (ctx) => {
   return slides;
 };
 
+const getSlideGroupsOverview = async (ctx) => {
+  await ensureBackendStoreReady(ctx);
+  const [slideGroups, slides] = await Promise.all([
+    listSlideGroups(ctx),
+    listSlides(ctx),
+  ]);
+  const groupedSlideIdMap = {};
+  slideGroups.forEach((slideGroup) => {
+    (slideGroup?.slides ?? []).forEach((slideItem) => {
+      const slideId = `${slideItem?.slideId ?? ''}`.trim();
+      if (!slideId) return;
+      groupedSlideIdMap[slideId] = true;
+    });
+  });
+  const orphanSlides = slides.filter((slide) => {
+    const slideId = `${slide?.id ?? ''}`.trim();
+    return !groupedSlideIdMap[slideId];
+  });
+  return {
+    slideGroups: slideGroups.map((slideGroup) => ({
+      id: slideGroup.id,
+      name: slideGroup.name,
+      slideNum: slideGroup.slideNum,
+      slides: slideGroup.slides,
+      folderPaths: slideGroup.folderPaths,
+    })),
+    orphanSlides,
+  };
+};
+
+const createSlideGroup = async (ctx, requestedName = '') => {
+  await ensureBackendStoreReady(ctx);
+  const { metaObjectId, metaPayload } = await ensureSlideGroupMetaObject(ctx);
+  const currentGroupIds = Array.isArray(metaPayload?.slideGroupIdList) ? metaPayload.slideGroupIdList : [];
+  const newGroupName = `${requestedName ?? ''}`.trim() || 'Untitled Group';
+  const newGroupObjectId = await createObject(ctx, 'json', TYPE_CODE.slideGroup, {
+    valueJson: {
+      entityType: 'slide-group',
+      groupId: '',
+      name: newGroupName,
+      slides: [],
+      folderPaths: [],
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+    },
+  });
+  const groupPayload = normalizeSlideGroupPayload({
+    groupId: newGroupObjectId,
+    name: newGroupName,
+    slides: [],
+    folderPaths: [],
+  }, newGroupObjectId);
+  await updateObject(ctx, 'json', newGroupObjectId, TYPE_CODE.slideGroup, {
+    valueJson: groupPayload,
+  }, true);
+  const nextMetaPayload = normalizeSlideGroupMetaPayload({
+    ...metaPayload,
+    slideGroupIdList: [...currentGroupIds, newGroupObjectId],
+  });
+  await updateObject(ctx, 'json', metaObjectId, TYPE_CODE.slideGroupMeta, {
+    valueJson: nextMetaPayload,
+  }, true);
+  return {
+    id: newGroupObjectId,
+    name: groupPayload.name,
+    slideNum: 0,
+    slides: [],
+  };
+};
+
+const deleteSlideGroup = async (ctx, groupIdRaw) => {
+  await ensureBackendStoreReady(ctx);
+  const groupId = `${groupIdRaw ?? ''}`.trim();
+  if (!groupId) return { ok: false, message: 'groupId is required' };
+  const [slideGroups, metaInfo] = await Promise.all([
+    listSlideGroups(ctx),
+    ensureSlideGroupMetaObject(ctx),
+  ]);
+  const targetGroup = slideGroups.find((slideGroup) => slideGroup.id === groupId);
+  if (!targetGroup) return { ok: false, message: 'slide-group not found' };
+  await deleteObjects(ctx, 'json', [targetGroup.objectId]);
+  const nextMetaPayload = normalizeSlideGroupMetaPayload({
+    ...metaInfo.metaPayload,
+    slideGroupIdList: (metaInfo.metaPayload?.slideGroupIdList ?? []).filter((nextGroupId) => nextGroupId !== groupId),
+  });
+  await updateObject(ctx, 'json', metaInfo.metaObjectId, TYPE_CODE.slideGroupMeta, {
+    valueJson: nextMetaPayload,
+  }, true);
+  return { ok: true };
+};
+
+const renameSlideGroup = async (ctx, groupIdRaw, nextNameRaw) => {
+  await ensureBackendStoreReady(ctx);
+  const groupId = `${groupIdRaw ?? ''}`.trim();
+  const nextName = `${nextNameRaw ?? ''}`.trim();
+  if (!groupId) return { ok: false, message: 'groupId is required' };
+  if (!nextName) return { ok: false, message: 'name is required' };
+  const slideGroups = await listSlideGroups(ctx);
+  const targetGroup = slideGroups.find((slideGroup) => slideGroup.id === groupId);
+  if (!targetGroup) return { ok: false, message: 'slide-group not found' };
+  const nextPayload = normalizeSlideGroupPayload({
+    groupId,
+    name: nextName,
+    slides: targetGroup.slides,
+    folderPaths: targetGroup.folderPaths,
+    createdAt: targetGroup.createdAt,
+    updatedAt: nowIso(),
+  }, groupId);
+  await updateObject(ctx, 'json', targetGroup.objectId, TYPE_CODE.slideGroup, {
+    valueJson: nextPayload,
+  }, true);
+  return { ok: true };
+};
+
+const updateSlideGroupSlides = async (ctx, groupIdRaw, nextSlidesRaw, nextFolderPathsRaw) => {
+  await ensureBackendStoreReady(ctx);
+  const groupId = `${groupIdRaw ?? ''}`.trim();
+  if (!groupId) return { ok: false, message: 'groupId is required' };
+  const nextSlides = normalizeSlideGroupSlides(nextSlidesRaw);
+  const [slideGroups, slides] = await Promise.all([
+    listSlideGroups(ctx),
+    listSlides(ctx),
+  ]);
+  const targetGroup = slideGroups.find((slideGroup) => slideGroup.id === groupId);
+  if (!targetGroup) return { ok: false, message: 'slide-group not found' };
+  const nextFolderPaths = nextFolderPathsRaw === undefined
+    ? normalizeSlideGroupFolderPaths(targetGroup.folderPaths)
+    : normalizeSlideGroupFolderPaths(nextFolderPathsRaw);
+  const slideIdSet = {};
+  slides.forEach((slide) => {
+    const slideId = `${slide?.id ?? ''}`.trim();
+    if (!slideId) return;
+    slideIdSet[slideId] = true;
+  });
+  for (const slideItem of nextSlides) {
+    if (!slideIdSet[slideItem.slideId]) {
+      return { ok: false, message: `slide not found: ${slideItem.slideId}` };
+    }
+  }
+  const ownerBySlideId = getSlideGroupOwnershipMap(slideGroups, groupId);
+  for (const slideItem of nextSlides) {
+    const ownerGroupId = `${ownerBySlideId[slideItem.slideId] ?? ''}`.trim();
+    if (ownerGroupId && ownerGroupId !== groupId) {
+      return {
+        ok: false,
+        message: `slide ${slideItem.slideId} already belongs to group ${ownerGroupId}`,
+      };
+    }
+  }
+  const nextPayload = normalizeSlideGroupPayload({
+    groupId,
+    name: targetGroup.name,
+    slides: nextSlides,
+    folderPaths: nextFolderPaths,
+    updatedAt: nowIso(),
+  }, groupId);
+  await updateObject(ctx, 'json', targetGroup.objectId, TYPE_CODE.slideGroup, {
+    valueJson: nextPayload,
+  }, true);
+  return { ok: true };
+};
+
 const createSlide = async (ctx, requestedName) => {
   await ensureBackendStoreReady(ctx);
-  let slideId = generateTypedId('sld');
-  while (ctx.slideMap?.[slideId]) {
-    slideId = generateTypedId('sld');
-  }
-  const firstPageId = generateTypedId('pag', 8);
+  const firstPageId = `page-${Date.now()}`;
   const name = `${requestedName ?? ''}`.trim() || 'Untitled';
   const payload = {
     name,
@@ -428,8 +729,8 @@ const createSlide = async (ctx, requestedName) => {
     containerDataById: {},
     compDataById: {},
   };
-  await saveSlideSnapshotById(ctx, slideId, payload);
-  return { id: slideId, name, data: payload };
+  const slideObjectId = await saveSlideSnapshotById(ctx, '', payload);
+  return { id: slideObjectId, name, data: payload };
 };
 
 const renameSlide = async (ctx, slideId, name) => {
@@ -530,30 +831,59 @@ const saveDirtySlide = async (ctx, slideId, payload) => {
 const createResource = async (ctx, kind) => {
   await ensureBackendStoreReady(ctx);
   if (kind !== 'bytes' && kind !== 'text') return { ok: false, message: 'invalid resource kind' };
-  let resourceId = generateTypedId('res');
-  while (ctx.resourceMap?.[resourceId]) {
-    resourceId = generateTypedId('res');
-  }
   const contentObjectId = kind === 'bytes'
     ? await createObject(ctx, 'bytes', TYPE_CODE.resourceContentBytes, { valueBase64: '' })
     : await createObject(ctx, 'text', TYPE_CODE.resourceContentText, { valueText: '' });
   const metaObjectId = await createObject(ctx, 'json', TYPE_CODE.resourceMeta, {
     valueJson: {
-      legacyResourceId: resourceId,
       kind,
       contentObjectId,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     },
   });
-  ctx.resourceMap[resourceId] = { kind, contentObjectId, metaObjectId };
-  await persistMaps(ctx);
-  return { ok: true, resourceId, kind };
+  return { ok: true, resourceId: metaObjectId, kind };
+};
+
+const getResourceMappingById = async (ctx, resourceId) => {
+  const normalizedResourceId = `${resourceId ?? ''}`.trim();
+  if (!normalizedResourceId) return null;
+  if (ctx.resourceMetaCache?.[normalizedResourceId]) return ctx.resourceMetaCache[normalizedResourceId];
+  try {
+    const metaRow = await getObject(ctx, 'json', normalizedResourceId);
+    const payload = metaRow?.valueJson ?? {};
+    const contentObjectId = `${payload?.contentObjectId ?? ''}`.trim();
+    const kindRaw = `${payload?.kind ?? payload?.resourceType ?? ''}`.trim().toLowerCase();
+    const kind = kindRaw === 'bytes' ? 'bytes' : 'text';
+    if (!contentObjectId) return null;
+    const mapping = {
+      kind,
+      contentObjectId,
+      metaObjectId: normalizedResourceId,
+    };
+    ctx.resourceMetaCache[normalizedResourceId] = mapping;
+    return mapping;
+  } catch (_error) {}
+  const resourceMetaItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.resourceMeta);
+  for (const item of resourceMetaItems) {
+    const payload = item?.valueJson ?? {};
+    const legacyResourceId = `${payload?.legacyResourceId ?? ''}`.trim();
+    if (legacyResourceId !== normalizedResourceId) continue;
+    const metaObjectId = `${item?.objectId ?? ''}`.trim();
+    const contentObjectId = `${payload?.contentObjectId ?? ''}`.trim();
+    if (!metaObjectId || !contentObjectId) return null;
+    const kindRaw = `${payload?.kind ?? payload?.resourceType ?? ''}`.trim().toLowerCase();
+    const kind = kindRaw === 'bytes' ? 'bytes' : 'text';
+    const mapping = { kind, contentObjectId, metaObjectId };
+    ctx.resourceMetaCache[metaObjectId] = mapping;
+    return mapping;
+  }
+  return null;
 };
 
 const updateResourceBytes = async (ctx, resourceId, base64) => {
   await ensureBackendStoreReady(ctx);
-  const mapping = ctx.resourceMap?.[resourceId];
+  const mapping = await getResourceMappingById(ctx, resourceId);
   if (!mapping) return { ok: false, message: 'resource not found' };
   await updateObject(ctx, 'bytes', mapping.contentObjectId, TYPE_CODE.resourceContentBytes, { valueBase64: `${base64 ?? ''}` }, true);
   return { ok: true };
@@ -561,7 +891,7 @@ const updateResourceBytes = async (ctx, resourceId, base64) => {
 
 const getResourceBytes = async (ctx, resourceId) => {
   await ensureBackendStoreReady(ctx);
-  const mapping = ctx.resourceMap?.[resourceId];
+  const mapping = await getResourceMappingById(ctx, resourceId);
   if (!mapping) return { ok: false, message: 'resource not found' };
   const row = await getObject(ctx, 'bytes', mapping.contentObjectId);
   return { ok: true, base64: `${row?.valueBase64 ?? ''}` };
@@ -569,7 +899,7 @@ const getResourceBytes = async (ctx, resourceId) => {
 
 const updateResourceText = async (ctx, resourceId, text) => {
   await ensureBackendStoreReady(ctx);
-  const mapping = ctx.resourceMap?.[resourceId];
+  const mapping = await getResourceMappingById(ctx, resourceId);
   if (!mapping) return { ok: false, message: 'resource not found' };
   await updateObject(ctx, 'text', mapping.contentObjectId, TYPE_CODE.resourceContentText, { valueText: `${text ?? ''}` }, true);
   return { ok: true };
@@ -577,14 +907,15 @@ const updateResourceText = async (ctx, resourceId, text) => {
 
 const getResourceText = async (ctx, resourceId) => {
   await ensureBackendStoreReady(ctx);
-  const mapping = ctx.resourceMap?.[resourceId];
+  const mapping = await getResourceMappingById(ctx, resourceId);
   if (!mapping) return { ok: false, message: 'resource not found' };
   const row = await getObject(ctx, 'text', mapping.contentObjectId);
   return { ok: true, text: `${row?.valueText ?? ''}` };
 };
 
 const isResourceUsedByAnySlide = async (ctx, resourceId) => {
-  const slideIds = Object.keys(ctx.slideMap ?? {});
+  const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  const slideIds = slideRows.map((item) => `${item?.objectId ?? ''}`.trim()).filter(Boolean);
   for (const slideId of slideIds) {
     const slideData = await getSlideSnapshotById(ctx, slideId);
     if (!slideData) continue;
@@ -595,7 +926,7 @@ const isResourceUsedByAnySlide = async (ctx, resourceId) => {
 
 const deleteResource = async (ctx, resourceId) => {
   await ensureBackendStoreReady(ctx);
-  const mapping = ctx.resourceMap?.[resourceId];
+  const mapping = await getResourceMappingById(ctx, resourceId);
   if (!mapping) return { ok: true };
   if (await isResourceUsedByAnySlide(ctx, resourceId)) {
     return { ok: false, message: 'resource is still referenced by components' };
@@ -606,21 +937,99 @@ const deleteResource = async (ctx, resourceId) => {
   } else {
     await deleteObjects(ctx, 'text', [mapping.contentObjectId]);
   }
-  delete ctx.resourceMap[resourceId];
-  await persistMaps(ctx);
+  delete ctx.resourceMetaCache[mapping.metaObjectId];
   return { ok: true };
+};
+
+const toNormalizedIdSet = (valueList) => {
+  const output = {};
+  (valueList ?? []).forEach((valueItem) => {
+    const valueText = `${valueItem ?? ''}`.trim();
+    if (!valueText) return;
+    output[valueText] = true;
+  });
+  return output;
+};
+
+const getNestedValue = (value, pathList) => {
+  let currentValue = value;
+  for (const pathItem of pathList) {
+    if (currentValue == null || typeof currentValue !== 'object') return '';
+    currentValue = currentValue[pathItem];
+  }
+  return `${currentValue ?? ''}`.trim();
+};
+
+const collectOwnedObjectIdsByType = async (ctx, typeCode, slideId, relatedIdSet) => {
+  const items = await listAllObjectsByType(ctx, 'json', typeCode);
+  const output = [];
+  items.forEach((item) => {
+    const objectId = `${item?.objectId ?? ''}`.trim();
+    if (!objectId) return;
+    const payload = item?.valueJson ?? {};
+    const candidateIdList = [
+      `${payload?.legacySlideId ?? ''}`.trim(),
+      `${payload?.slideId ?? ''}`.trim(),
+      `${payload?.ownerSlideId ?? ''}`.trim(),
+      `${payload?.parentSlideId ?? ''}`.trim(),
+      `${payload?.legacyPageId ?? ''}`.trim(),
+      `${payload?.pageId ?? ''}`.trim(),
+      `${payload?.legacyContainerId ?? ''}`.trim(),
+      `${payload?.containerId ?? ''}`.trim(),
+      `${payload?.legacyCompId ?? ''}`.trim(),
+      `${payload?.compId ?? ''}`.trim(),
+      getNestedValue(payload, ['pageData', 'id']),
+      getNestedValue(payload, ['containerData', 'id']),
+      getNestedValue(payload, ['containerData', 'compId']),
+      getNestedValue(payload, ['compData', 'id']),
+    ];
+    const isOwned = candidateIdList.some((candidateId) => {
+      if (!candidateId) return false;
+      if (candidateId === slideId) return true;
+      return Boolean(relatedIdSet[candidateId]);
+    });
+    if (!isOwned) return;
+    output.push(objectId);
+  });
+  return output;
 };
 
 const deleteSlide = async (ctx, slideId) => {
   await ensureBackendStoreReady(ctx);
-  const objectId = getSlideObjectId(ctx, slideId);
+  const objectId = `${slideId ?? ''}`.trim();
   if (!objectId) return { ok: false, message: 'slide not found' };
   const slideData = await getSlideSnapshotById(ctx, slideId);
-  const resourceIds = Array.from(collectResourceIdsFromSlideData(slideData ?? {}));
-  await deleteObjects(ctx, 'json', [objectId]);
-  delete ctx.slideMap[slideId];
-  await persistMaps(ctx);
-  for (const resourceId of resourceIds) {
+  if (!slideData) return { ok: false, message: 'slide not found' };
+  const resourceIdSet = collectResourceIdsFromSlideData(slideData ?? {});
+  const pageIds = Array.isArray(slideData?.metadata?.pageIds) ? slideData.metadata.pageIds : [];
+  const pageDataIds = Object.keys(slideData?.pageDataById ?? {});
+  const containerIds = Object.keys(slideData?.containerDataById ?? {});
+  const compIds = Object.keys(slideData?.compDataById ?? {});
+  const relatedIdSet = toNormalizedIdSet([
+    ...pageIds,
+    ...pageDataIds,
+    ...containerIds,
+    ...compIds,
+  ]);
+  const [pageObjectIds, containerObjectIds, componentObjectIds] = await Promise.all([
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.page, objectId, relatedIdSet),
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.container, objectId, relatedIdSet),
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.component, objectId, relatedIdSet),
+  ]);
+  if (componentObjectIds.length > 0) {
+    const componentIdSet = toNormalizedIdSet(componentObjectIds);
+    const componentItems = await listAllObjectsByType(ctx, 'json', TYPE_CODE.component);
+    componentItems.forEach((item) => {
+      const componentObjectId = `${item?.objectId ?? ''}`.trim();
+      if (!componentIdSet[componentObjectId]) return;
+      collectResourceIdsFromCompData(item?.valueJson?.compData ?? {}, resourceIdSet);
+    });
+  }
+  const relatedJsonObjectIds = [
+    ...new Set([objectId, ...pageObjectIds, ...containerObjectIds, ...componentObjectIds]),
+  ];
+  await deleteObjects(ctx, 'json', relatedJsonObjectIds);
+  for (const resourceId of Array.from(resourceIdSet)) {
     if (await isResourceUsedByAnySlide(ctx, resourceId)) continue;
     await deleteResource(ctx, resourceId);
   }
@@ -668,17 +1077,14 @@ const deleteComponent = async (ctx, slideId, compId) => {
 
 const reinitDatabase = async (ctx) => {
   await ensureBackendStoreReady(ctx);
-  const slideIds = Object.keys(ctx.slideMap ?? {});
+  const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  const slideIds = slideRows.map((row) => `${row?.objectId ?? ''}`.trim()).filter(Boolean);
   for (const slideId of slideIds) {
     await deleteSlide(ctx, slideId);
   }
-  Object.keys(ctx.resourceMap ?? {}).forEach((resourceId) => {
-    delete ctx.resourceMap[resourceId];
-  });
-  ctx.slideMap = {};
-  await persistMaps(ctx);
+  ctx.resourceMetaCache = {};
   const seed = createSeedSlideDocument();
-  await saveSlideSnapshotById(ctx, seed.id, seed.data);
+  await saveSlideSnapshotById(ctx, '', seed.data);
   const slides = await listSlides(ctx);
   return { ok: true, slides };
 };
@@ -687,22 +1093,31 @@ const dumpDatabaseSnapshot = async (ctx) => {
   await ensureBackendStoreReady(ctx);
   const slides = [];
   const resources = [];
-  for (const [slideId, objectId] of Object.entries(ctx.slideMap ?? {})) {
-    const row = await getObject(ctx, 'json', objectId);
+  const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  for (const row of slideRows) {
+    const objectId = `${row?.objectId ?? ''}`.trim();
+    if (!objectId) continue;
     slides.push({
-      id: slideId,
+      id: objectId,
       data: row?.valueJson ?? {},
       objectId,
     });
   }
-  for (const [resourceId, mapping] of Object.entries(ctx.resourceMap ?? {})) {
-    const row = await getObject(ctx, mapping.kind === 'bytes' ? 'bytes' : 'text', mapping.contentObjectId);
+  const resourceMetaRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.resourceMeta);
+  for (const resourceMetaRow of resourceMetaRows) {
+    const resourceId = `${resourceMetaRow?.objectId ?? ''}`.trim();
+    const payload = resourceMetaRow?.valueJson ?? {};
+    const contentObjectId = `${payload?.contentObjectId ?? ''}`.trim();
+    const kindRaw = `${payload?.kind ?? payload?.resourceType ?? ''}`.trim().toLowerCase();
+    const kind = kindRaw === 'bytes' ? 'bytes' : 'text';
+    if (!resourceId || !contentObjectId) continue;
+    const row = await getObject(ctx, kind === 'bytes' ? 'bytes' : 'text', contentObjectId);
     resources.push({
       id: resourceId,
-      kind: mapping.kind,
-      contentObjectId: mapping.contentObjectId,
-      data_text: mapping.kind === 'text' ? `${row?.valueText ?? ''}` : '',
-      data_bytes_base64: mapping.kind === 'bytes' ? `${row?.valueBase64 ?? ''}` : '',
+      kind,
+      contentObjectId,
+      data_text: kind === 'text' ? `${row?.valueText ?? ''}` : '',
+      data_bytes_base64: kind === 'bytes' ? `${row?.valueBase64 ?? ''}` : '',
     });
   }
   return {
@@ -719,8 +1134,9 @@ const createObjectStorageContext = () => {
     serviceUrl,
     spaceName,
     spaceId: '',
-    slideMap: {},
-    resourceMap: {},
+    isReady: false,
+    resourceMetaCache: {},
+    slideGroupMetaObjectId: '',
     info: {
       serviceUrl,
       spaceName,
@@ -734,6 +1150,12 @@ export {
   ensureBackendStoreReady,
   initBackendStore,
   listSlides,
+  listSlideGroups,
+  getSlideGroupsOverview,
+  createSlideGroup,
+  deleteSlideGroup,
+  renameSlideGroup,
+  updateSlideGroupSlides,
   createSlide,
   renameSlide,
   getSlideSnapshot,

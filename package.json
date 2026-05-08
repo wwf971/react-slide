@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
+    "dev": "vite frontend --config frontend/vite.config.js",
+    "build": "vite build frontend --config frontend/vite.config.js",
+    "lint": "eslint --config frontend/eslint.config.js frontend/src",
+    "preview": "vite preview frontend --config frontend/vite.config.js",
     "slides": "node backend/server.js"
   },
   "dependencies": {
@@ -20,7 +20,8 @@
     "mobx-react-lite": "^4.1.1",
     "pg": "^8.20.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.15.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

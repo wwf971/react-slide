@@ -1,0 +1,240 @@
+.group-view-root {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.group-view-top-header {
+  min-height: 28px;
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  background: #fafafa;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 2px 4px;
+  box-sizing: border-box;
+}
+
+.group-view-top-header-left,
+.group-view-top-header-right {
+  display: flex;
+  align-items: center;
+}
+
+.group-view-top-header-right {
+  justify-content: flex-end;
+}
+
+.group-view-top-header-title {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  justify-self: center;
+}
+
+.group-view-top-header-title-text {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.group-view-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.group-view-left {
+  width: 320px;
+  min-width: 240px;
+  border-right: 1px solid #d9d9d9;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.group-view-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  box-sizing: border-box;
+  gap: 4px;
+}
+
+.group-view-btn {
+  height: 24px;
+  border: 1px solid #c7c7c7;
+  border-radius: 2px;
+  background: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.group-view-tree-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  padding: 2px;
+  background: #ffffff;
+}
+
+.group-view-left .tree-view {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.group-view-left .tree-view-row.selected {
+  background: transparent;
+}
+
+.group-view-left .tree-view-row:hover {
+  background: transparent;
+}
+
+.group-view-left .tree-view-label {
+  height: 100%;
+  box-sizing: border-box;
+  padding: 2px 3px;
+  display: flex;
+  align-items: center;
+}
+
+.group-view-left .tree-view-row:hover .tree-view-label {
+  background: #edf3ff;
+}
+
+.group-view-left .tree-view-row.selected .tree-view-label {
+  background: #dcebff;
+  color: #17305f;
+  font-weight: 700;
+}
+
+.group-view-tree-item-folder,
+.group-view-tree-item-slide {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.group-view-tree-item-slide {
+  cursor: pointer;
+}
+
+.group-view-tree-item-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.group-view-tree-item-folder-icon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.group-view-tree-menu-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.group-view-slide-head-line {
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  padding: 4px 6px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.group-view-slide-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.group-view-slide-path {
+  font-size: 12px;
+  color: #666666;
+}
+
+.group-view-rename-line {
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  padding: 3px 6px;
+  background: #fafafa;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.group-view-open-slide-btn {
+  height: 22px;
+  border: 1px solid #c7c7c7;
+  border-radius: 2px;
+  background: #ffffff;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 8px;
+}
+
+.group-view-slide-body {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid #dcdcdc;
+  border-radius: 2px;
+  overflow: auto;
+}
+
+.group-view-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #666666;
+}
+
+.group-view-error-line {
+  border: 1px solid #d8b3b3;
+  background: #fff3f3;
+  color: #8d2222;
+  border-radius: 2px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
+.group-view-stack-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.group-view-stack-page {
+  border: 1px solid #d6d6d6;
+  border-radius: 2px;
+  padding: 4px;
+  background: #f9f9f9;
+}
+
+.group-view-stack-page.is-current {
+  border-color: #86a9e9;
+  background: #eef3ff;
+}

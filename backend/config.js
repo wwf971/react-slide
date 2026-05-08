@@ -31,6 +31,7 @@ const loadLocalConfig = async () => {
       DATABASE_PRODUCTION: localConfig.DATABASE_PRODUCTION ?? localConfig.DATABASE_PROD ?? {},
       OBJECT_STORAGE_SERVICE_URL: `${localConfig.OBJECT_STORAGE_SERVICE_URL ?? ''}`.trim(),
       OBJECT_STORAGE_SPACE_NAME: `${localConfig.OBJECT_STORAGE_SPACE_NAME ?? ''}`.trim(),
+      BACKEND_PORT: Number(localConfig.BACKEND_PORT ?? 0),
     };
   } catch {
     return {
@@ -39,6 +40,7 @@ const loadLocalConfig = async () => {
       DATABASE_PRODUCTION: {},
       OBJECT_STORAGE_SERVICE_URL: '',
       OBJECT_STORAGE_SPACE_NAME: '',
+      BACKEND_PORT: 0,
     };
   }
 };
@@ -69,6 +71,10 @@ const OBJECT_STORAGE_SERVICE_URL =
   localConfig.OBJECT_STORAGE_SERVICE_URL || 'http://127.0.0.1:5107';
 const OBJECT_STORAGE_SPACE_NAME =
   localConfig.OBJECT_STORAGE_SPACE_NAME || 'slides';
+const BACKEND_PORT =
+  Number.isFinite(localConfig.BACKEND_PORT) && localConfig.BACKEND_PORT > 0
+    ? Number(localConfig.BACKEND_PORT)
+    : 12600;
 
 export {
   DATABASE,
@@ -76,4 +82,5 @@ export {
   DATABASE_PRESET_KEY,
   OBJECT_STORAGE_SERVICE_URL,
   OBJECT_STORAGE_SPACE_NAME,
+  BACKEND_PORT,
 };
