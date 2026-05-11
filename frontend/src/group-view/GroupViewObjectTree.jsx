@@ -181,6 +181,32 @@ const GroupViewObjectTree = ({
     });
   };
 
+  const openMenuForTreeItemId = (itemIdRaw, x, y) => {
+    const itemId = `${itemIdRaw ?? ''}`.trim();
+    if (!itemId) return false;
+    const itemData = treeData.itemById?.[itemId];
+    if (!itemData) return false;
+    if (itemData.nodeType === 'slide') {
+      const slideId = `${itemData?.slideId ?? ''}`.trim();
+      if (slideId) onSelectSlide(slideId);
+      openContextMenuAt(x, y, {
+        slideId,
+        path: `${itemData?.path ?? ''}`.trim(),
+        menuType: 'slide',
+      });
+      return true;
+    }
+    if (itemData.nodeType === 'folder') {
+      openContextMenuAt(x, y, {
+        path: `${itemData?.path ?? ''}`.trim(),
+        menuType: 'folder',
+        isPersistingSelf: itemData?.isPersistingSelf === true,
+      });
+      return true;
+    }
+    return false;
+  };
+
   return (
     <div
       className="group-view-left"
@@ -188,9 +214,17 @@ const GroupViewObjectTree = ({
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openContextMenuAt(event.clientX, event.clientY, {
-          menuType: 'empty-tree',
-        });
+        const clickedElement = event.target;
+        const isOnTreeRow = Boolean(clickedElement?.closest?.('.tree-view-row'));
+        if (isOnTreeRow) {
+          return;
+        }
+        const isInTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
+        if (!isInTreeWrap) {
+          setMenuState(null);
+          return;
+        }
+        openContextMenuAt(event.clientX, event.clientY, { menuType: 'empty-tree' });
       }}
     >
       <div className="group-view-tree-wrap" data-group-view-tree-wrap="true">
@@ -215,6 +249,24 @@ const GroupViewObjectTree = ({
             if (!slideId) return;
             onSelectSlide(slideId);
           }}
+          onItemContextMenu={async (_itemId, itemData, event) => {
+            if (!itemData) return;
+            if (itemData.nodeType === 'slide') {
+              const slideId = `${itemData?.slideId ?? ''}`.trim();
+              if (slideId) onSelectSlide(slideId);
+              openContextMenuAt(event.clientX, event.clientY, {
+                slideId,
+                path: `${itemData?.path ?? ''}`.trim(),
+                menuType: 'slide',
+              });
+              return;
+            }
+            openContextMenuAt(event.clientX, event.clientY, {
+              path: `${itemData?.path ?? ''}`.trim(),
+              menuType: 'folder',
+              isPersistingSelf: itemData?.isPersistingSelf === true,
+            });
+          }}
           getItemComp={(itemData) => {
             if (itemData?.nodeType === 'slide') {
               return ({ itemData: nodeData }) => (
@@ -223,17 +275,6 @@ const GroupViewObjectTree = ({
                   data-tree-node-type="slide"
                   data-slide-id={`${nodeData?.slideId ?? ''}`.trim()}
                   data-path={`${nodeData?.path ?? ''}`.trim()}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const slideId = `${nodeData?.slideId ?? ''}`.trim();
-                    if (slideId) onSelectSlide(slideId);
-                    openContextMenuAt(event.clientX, event.clientY, {
-                      slideId,
-                      path: `${nodeData?.path ?? ''}`.trim(),
-                      menuType: 'slide',
-                    });
-                  }}
                 >
                   {`${nodeData?.text ?? ''}`.trim()}
                 </div>
@@ -245,15 +286,6 @@ const GroupViewObjectTree = ({
                 data-tree-node-type="folder"
                 data-path={`${nodeData?.path ?? ''}`.trim()}
                 data-is-persisting-self={nodeData?.isPersistingSelf ? '1' : '0'}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  openContextMenuAt(event.clientX, event.clientY, {
-                    path: `${nodeData?.path ?? ''}`.trim(),
-                    menuType: 'folder',
-                    isPersistingSelf: nodeData?.isPersistingSelf === true,
-                  });
-                }}
               >
                 <span className="group-view-tree-item-folder-icon">
                   <FolderIcon width={14} height={14} />
@@ -307,6 +339,12 @@ const GroupViewObjectTree = ({
             backdropElement.style.pointerEvents = 'none';
             const clickedElement = document.elementFromPoint(event.clientX, event.clientY);
             backdropElement.style.pointerEvents = '';
+            const rowElement = clickedElement?.closest?.('.tree-view-row[data-tree-item-id]');
+            if (rowElement) {
+              const rowItemId = `${rowElement.getAttribute('data-tree-item-id') ?? ''}`.trim();
+              const isOpened = openMenuForTreeItemId(rowItemId, event.clientX, event.clientY);
+              if (isOpened) return;
+            }
 
             const slideElement = clickedElement?.closest?.('[data-tree-node-type="slide"]');
             if (slideElement) {
@@ -320,7 +358,6 @@ const GroupViewObjectTree = ({
               });
               return;
             }
-
             const folderElement = clickedElement?.closest?.('[data-tree-node-type="folder"]');
             if (folderElement) {
               const path = `${folderElement.getAttribute('data-path') ?? ''}`.trim();
@@ -332,15 +369,12 @@ const GroupViewObjectTree = ({
               });
               return;
             }
-
-            const inLeftTreePanel = Boolean(clickedElement?.closest?.('[data-group-view-left="true"]'));
-            if (inLeftTreePanel) {
-              openContextMenuAt(event.clientX, event.clientY, {
-                menuType: 'empty-tree',
-              });
+            const inTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
+            if (!inTreeWrap) {
+              setMenuState(null);
               return;
             }
-            setMenuState(null);
+            openContextMenuAt(event.clientX, event.clientY, { menuType: 'empty-tree' });
           }}
           onItemClick={(item) => {
             if (item?.data?.action === 'create-empty-slide') {

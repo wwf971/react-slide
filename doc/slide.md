@@ -1,23 +1,21 @@
-to run test server:
-
-```
-pnpm run slides
-```
 
 
-## temporarily make component container display overflown content.
-
-`CompIFrame` can open an iframe panel outside container bounds by using runtime-only overflow visibility in `contentStore` (`setContainerOverflowVisible`), so iframe open/close state is not persisted.
 
 
 ## Frontend Hierarchy
 
 ```
 store
-  -> Slides (provider + page switch toolbar)
-  -> Slide (current page surface + layer)
+  -> Slide (document-level provider + page switch toolbar)
+  -> Page (current page surface + layer)
   -> CompContainer (select, move, resize shell)
   -> Comp (resolved by getComp, e.g. text/image/metadata)
+```
+
+Hierarchy of persisted entities:
+
+```
+slide-group -> slide -> page
 ```
 
 
@@ -37,14 +35,26 @@ store
     - `slide-page-layer` still stays `width:100%; height:100%`, so ratio coords and derived pixel sizes remain consistent
 
 
-## Create New Component on Slide
+## Create New Component on Page
 
-1. Create via guidance component `CompSwitcher` in `/src/slides/comp/CompSwitcher.tsx`; available options are derived from `/src/slides/comp` with rule `CompXxxx.tsx -> Xxx`.
+1. Create via guidance component `CompSwitcher` in `/frontend/src/comp_custom/CompSwitcher.tsx`; available options are resolved by component name rule `CompXxxx.tsx -> Xxx`.
 
-2. Create via context menu(right click menu), by right clicknig on empty space of a slide
+2. Create via context menu (right click menu), by right clicking on empty space of a page.
 
 ## Custom Components
 
 For how to implement/things you need to be careful about when implementing a custom component, see ./comp_custom_design.md
 
 
+
+## temporarily make component container display overflown content.
+
+`CompIFrame` can open an iframe panel outside container bounds by using runtime-only overflow visibility in `contentStore` (`setContainerOverflowVisible`), so iframe open/close state is not persisted.
+
+
+
+to run test server:
+
+```
+pnpm run slides
+```

@@ -13,6 +13,7 @@ const TYPE_CODE = {
   slideGroup: 8,
   slideGroupMeta: 9,
 };
+const OBJECT_EDIT_TYPE_UPDATE_AND_EDIT = 1;
 
 const cloneData = (value) => JSON.parse(JSON.stringify(value ?? {}));
 const nowIso = () => new Date().toISOString();
@@ -382,20 +383,26 @@ const createObject = async (ctx, dataType, type, values) => {
       spaceId: ctx.spaceId,
       dataType,
       type,
+      editType: OBJECT_EDIT_TYPE_UPDATE_AND_EDIT,
       ...values,
     },
   });
   return `${data?.objectId ?? ''}`;
 };
 
-const updateObject = async (ctx, dataType, objectId, type, values, isDeletePreviousData = true) => {
+const updateObject = async (ctx, dataType, objectId, type, values, isDeletePrevVersionData = true) => {
+  // This adapter keeps the old function signature, but runtime now always edits in-place.
+  // In in-place mode, deleting previous-version data is not applicable.
+  void isDeletePrevVersionData;
   await requestObjectStorage(ctx, 'POST', '/api/object/update', {
     body: {
       spaceId: ctx.spaceId,
       dataType,
       objectId,
       type,
-      isDeletePreviousData,
+      isUpdateVersion: false,
+      // Keep false because previous-version cleanup is only valid on append-version writes.
+      isDeletePrevVersionData: false,
       ...values,
     },
   });

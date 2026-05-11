@@ -164,6 +164,7 @@ const CompSwitcher = observer(({
 
   return (
     <div className="slide-switcher-root">
+      <div className="slide-switcher-tag">CompGenerator</div>
       <input
         ref={inputRef}
         className="slide-switcher-input"

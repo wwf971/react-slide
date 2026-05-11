@@ -157,7 +157,10 @@ const Header = ({
         <span className="slide-toolbar-page-value">{totalPage}</span>
         <span className={`slide-toolbar-saving ${isPersisting ? 'is-visible' : ''}`}>saving</span>
       </div>
-      <div className={`slide-toolbar-status ${persistFailureMessage ? 'is-visible' : ''}`}>
+      <div
+        className={`slide-toolbar-status ${persistFailureMessage ? 'is-visible' : ''}`}
+        title={persistFailureMessage || ''}
+      >
         {persistFailureMessage}
       </div>
       <div className="slide-toolbar-page-nav">

@@ -59,5 +59,6 @@ Objects are stored by `(dataType, type)`:
 ## Versioning and Deletes
 
 - Object updates use object-storage versioned updates.
-- Backend requests `isDeletePreviousData=true` for normal updates to reduce old payload retention.
+- React-note objects should use `editType=1` (`UPDATE-AND-EDIT`), and updates should use in-version write (`isUpdateVersion=false`).
+- Backend keeps `isDeletePrevVersionData=false` for normal updates in this mode.
 - Slide deletion also removes related page/container/component objects and unreferenced resource objects to avoid object trash.

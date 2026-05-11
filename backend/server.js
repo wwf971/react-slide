@@ -36,7 +36,7 @@ import {
 const currentFilePath = fileURLToPath(import.meta.url);
 const backendDir = dirname(currentFilePath);
 const projectRootDir = resolve(backendDir, '..');
-const frontendDistDir = resolve(projectRootDir, 'frontend', 'dist');
+const frontendDistDir = resolve(projectRootDir, 'frontend', 'build');
 const frontendIndexPath = resolve(frontendDistDir, 'index.html');
 const backendDumpDir = resolve(projectRootDir, 'data-dumps');
 const FRONTEND_ROUTE_PATTERNS = [
@@ -535,92 +535,91 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  if (existsSync(frontendIndexPath)) {
-    const frontendIndexHtml = readFileSync(frontendIndexPath, 'utf8');
-    const sendFrontendIndexHtml = (res) => {
+  const sendFrontendIndexHtml = (res) => {
+    try {
+      const frontendIndexHtml = readFileSync(frontendIndexPath, 'utf8');
       res.type('html').send(frontendIndexHtml);
-    };
-    app.get(['/overview', '/overview/'], (_req, res) => {
-      sendFrontendIndexHtml(res);
-    });
-    app.get('/slide/:slideId', (_req, res) => {
-      sendFrontendIndexHtml(res);
-    });
-    app.get('/group/:groupId', async (req, res) => {
-      const groupId = `${req.params.groupId ?? ''}`.trim();
-      if (!groupId) {
-        res.status(404).json({
-          ok: false,
-          message: 'slide-group not found',
-        });
-        return;
-      }
-      try {
-        const groups = await listSlideGroups(storeContext);
-        const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
-        if (!isGroupFound) {
-          res.status(404).json({
-            ok: false,
-            message: `slide-group not found: ${groupId}`,
-          });
-          return;
-        }
-      } catch (error) {
-        res.status(500).json({
-          ok: false,
-          message: error instanceof Error ? error.message : 'failed to validate slide-group route',
-        });
-        return;
-      }
-      sendFrontendIndexHtml(res);
-    });
-    app.use(express.static(frontendDistDir, {
-      index: false,
-      fallthrough: true,
-    }));
-    app.use(async (req, res, next) => {
-      if (req.path.startsWith('/api/slide')) {
-        next();
-        return;
-      }
-      if (req.method !== 'GET' && req.method !== 'HEAD') {
-        next();
-        return;
-      }
-      if (getIsFrontendRoutePath(req.path)) {
-        const groupId = getGroupIdFromFrontendPath(req.path);
-        if (groupId) {
-          try {
-            const groups = await listSlideGroups(storeContext);
-            const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
-            if (!isGroupFound) {
-              res.status(404).json({
-                ok: false,
-                message: `slide-group not found: ${groupId}`,
-              });
-              return;
-            }
-          } catch (error) {
-            res.status(500).json({
-              ok: false,
-              message: error instanceof Error ? error.message : 'failed to validate slide-group route',
-            });
-            return;
-          }
-        }
-        sendFrontendIndexHtml(res);
-        return;
-      }
-      res.status(404).json(getFrontendRouteErrorPayload());
-    });
-  } else {
-    app.get('*', (_req, res) => {
+      return;
+    } catch {
       res.status(503).json({
         ok: false,
         message: 'frontend build missing, run pnpm build',
       });
-    });
-  }
+    }
+  };
+  app.get(['/overview', '/overview/'], (_req, res) => {
+    sendFrontendIndexHtml(res);
+  });
+  app.get('/slide/:slideId', (_req, res) => {
+    sendFrontendIndexHtml(res);
+  });
+  app.get('/group/:groupId', async (req, res) => {
+    const groupId = `${req.params.groupId ?? ''}`.trim();
+    if (!groupId) {
+      res.status(404).json({
+        ok: false,
+        message: 'slide-group not found',
+      });
+      return;
+    }
+    try {
+      const groups = await listSlideGroups(storeContext);
+      const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
+      if (!isGroupFound) {
+        res.status(404).json({
+          ok: false,
+          message: `slide-group not found: ${groupId}`,
+        });
+        return;
+      }
+    } catch (error) {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to validate slide-group route',
+      });
+      return;
+    }
+    sendFrontendIndexHtml(res);
+  });
+  app.use(express.static(frontendDistDir, {
+    index: false,
+    fallthrough: true,
+  }));
+  app.use(async (req, res, next) => {
+    if (req.path.startsWith('/api/slide')) {
+      next();
+      return;
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      next();
+      return;
+    }
+    if (getIsFrontendRoutePath(req.path)) {
+      const groupId = getGroupIdFromFrontendPath(req.path);
+      if (groupId) {
+        try {
+          const groups = await listSlideGroups(storeContext);
+          const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
+          if (!isGroupFound) {
+            res.status(404).json({
+              ok: false,
+              message: `slide-group not found: ${groupId}`,
+            });
+            return;
+          }
+        } catch (error) {
+          res.status(500).json({
+            ok: false,
+            message: error instanceof Error ? error.message : 'failed to validate slide-group route',
+          });
+          return;
+        }
+      }
+      sendFrontendIndexHtml(res);
+      return;
+    }
+    res.status(404).json(getFrontendRouteErrorPayload());
+  });
 
   app.closeBackendDb = async () => {};
 
@@ -636,11 +635,12 @@ const startSlideBackendServer = async () => {
   server.on('listening', () => {
     console.info(`[slide-backend] listening on http://${host}:${port}`);
     console.info(`[slide-backend] local access: http://127.0.0.1:${port}`);
-    if (existsSync(frontendIndexPath)) {
+    try {
+      readFileSync(frontendIndexPath, 'utf8');
       console.info(`[slide-backend] overview: http://127.0.0.1:${port}/overview/`);
       console.info(`[slide-backend] slide: http://127.0.0.1:${port}/slide/{slideId}`);
       console.info(`[slide-backend] note: '/' returns JSON error`);
-    } else {
+    } catch {
       console.info('[slide-backend] frontend build missing, run: pnpm build');
     }
     console.info(`[slide-backend] health: http://127.0.0.1:${port}/api/slide/health`);

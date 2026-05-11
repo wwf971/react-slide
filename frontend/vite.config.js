@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react({ include: /\.(jsx|js)$/ })],
+  build: {
+    outDir: 'build',
+    emptyOutDir: true,
+  },
   resolve: {
     dedupe: ['react', 'react-dom'],
   },

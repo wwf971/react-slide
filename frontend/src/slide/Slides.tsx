@@ -92,8 +92,10 @@ const Slides = observer(({
     if (!onCurrentSlideIdChange) return;
     const nextSlideId = `${currentSlideId ?? ''}`.trim();
     if (!nextSlideId) return;
+    const requestedId = `${requestedSlideId ?? ''}`.trim();
+    if (requestedId && requestedId !== nextSlideId) return;
     onCurrentSlideIdChange(nextSlideId);
-  }, [currentSlideId, onCurrentSlideIdChange]);
+  }, [currentSlideId, onCurrentSlideIdChange, requestedSlideId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite frontend --config frontend/vite.config.js",
-    "build": "vite build frontend --config frontend/vite.config.js",
+    "build": "rm -rf dist frontend/dist && vite build frontend --config frontend/vite.config.js --outDir build",
     "lint": "eslint --config frontend/eslint.config.js frontend/src",
     "preview": "vite preview frontend --config frontend/vite.config.js",
     "slides": "node backend/server.js"

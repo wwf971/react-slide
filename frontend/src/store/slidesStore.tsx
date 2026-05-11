@@ -929,7 +929,7 @@ class SlidesStore {
     this.temporarySwitcherByPageId[pageId] = {
       id: generateTypedId('tmp-switcher'),
       anchorPoint: { x: safeX, y: safeY },
-      text: '',
+      text: '/',
     };
     this.clearSelectedContainer();
     this.clearSlideSurfaceSelected();

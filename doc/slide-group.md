@@ -2,10 +2,15 @@
 
 ## Overview
 
-- A slide-group is a JSON object stored in object-storage (`dataType=json`, `type=8`).
-- Group id is the group object's `objectId`.
-- A slide can belong to at most one group.
-- Slide references inside a group use slide object-storage `objectId`.
+- A slide-group is a user-facing workspace concept for organizing many slides as one navigable collection.
+- It plays the same role as a foldered project view: users manage one group name, then browse slides through a tree built from folder paths.
+- Slides can be grouped or left ungrouped. Ungrouped slides are treated as orphan slides and are shown separately in overview.
+- Each slide belongs to at most one group, so group ownership is always unambiguous.
+- Folders inside a group are virtual structure derived from slide paths, with optional persisted empty folders when users want stable tree layout.
+
+## Implementation
+
+- Persistence is implemented by object-storage (`dataType=json`, `type=8`), and all ids in group data are object-storage ids.
 
 ## Group Data
 
@@ -25,7 +30,7 @@
 - Tree is built by merging:
   - inferred folder chain from every slide `path`
   - explicit `folderPaths` persisted folders
-- Slide row name is slide data `name`.
+- Slide row name is slide payload `name`.
 - Slide row position comes from slide `path`.
 
 ## Folder States

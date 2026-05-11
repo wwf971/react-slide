@@ -9,14 +9,15 @@ lerna-debug.log*
 
 node_modules/
 dist/
-/frontend/dist/
+/frontend/build/
 build/
 migrate/
 dist-ssr
 *.local
 
 /migration
-/deploy
+
+/script/deploy*
 
 # Editor directories and files
 .vscode/*

@@ -190,10 +190,16 @@
   border: 1px solid #bfbfbf;
   background: #ffffff;
   color: #202020;
-  height: 26px;
-  padding: 0 8px;
+  min-height: 26px;
+  padding: 2px 8px;
   border-radius: 2px;
   box-sizing: border-box;
+  line-height: 1.2;
+  white-space: normal;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .slide-toolbar-page {
@@ -686,6 +692,21 @@
   position: relative;
   background: #ffffff;
   padding: 2px;
+}
+
+.slide-switcher-tag {
+  position: absolute;
+  left: 2px;
+  top: 0;
+  transform: translateY(calc(-100% - 1px));
+  font-size: 10px;
+  line-height: 1;
+  border: 1px solid #6f86bc;
+  border-radius: 2px;
+  background: #f8faff;
+  color: #25314f;
+  padding: 1px 3px;
+  white-space: nowrap;
 }
 
 .slide-switcher-input {

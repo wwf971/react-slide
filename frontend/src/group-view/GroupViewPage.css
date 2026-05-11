@@ -126,16 +126,23 @@
 .group-view-tree-item-slide {
   font-size: 12px;
   line-height: 16px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .group-view-tree-item-slide {
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  min-height: 16px;
 }
 
 .group-view-tree-item-folder {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 3px;
+  min-height: 16px;
 }
 
 .group-view-tree-item-folder-icon {
