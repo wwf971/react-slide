@@ -135,7 +135,33 @@
   cursor: pointer;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 4px;
   min-height: 16px;
+}
+
+.group-view-tree-item-slide-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-view-tree-item-missing-mark {
+  width: 12px;
+  min-width: 12px;
+  height: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e1c252;
+  border-radius: 2px;
+  background: #fff3b0;
+  color: #7b5a00;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .group-view-tree-item-folder {
@@ -215,6 +241,43 @@
   justify-content: center;
   font-size: 12px;
   color: #666666;
+}
+
+.group-view-missing-slide-panel {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px;
+  box-sizing: border-box;
+  background: #fff6f6;
+}
+
+.group-view-missing-slide-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #8d2222;
+}
+
+.group-view-missing-slide-message {
+  font-size: 12px;
+  line-height: 1.25;
+  color: #8d2222;
+  white-space: pre-wrap;
+}
+
+.group-view-missing-slide-btn {
+  height: 22px;
+  border: 1px solid #d2a5a5;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #8d2222;
+  font-size: 12px;
+  padding: 0 8px;
+  cursor: pointer;
 }
 
 .group-view-error-line {

@@ -41,6 +41,39 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const groupSlides = useMemo(() => {
     return Array.isArray(groupData?.slides) ? groupData.slides : [];
   }, [groupData?.slides]);
+  const slideNameById = slidesGroupStore.slideNameById ?? {};
+  const missingSlideIdMap = useMemo(() => {
+    const output = {};
+    groupSlides.forEach((slideItem) => {
+      const slideId = `${slideItem?.slideId ?? ''}`.trim();
+      if (!slideId) return;
+      if (Object.prototype.hasOwnProperty.call(slideNameById, slideId)) return;
+      output[slideId] = true;
+    });
+    const selectedSlideIdText = `${selectedSlideId ?? ''}`.trim();
+    const hasSelectedSlideSwitchFailure = Boolean(
+      selectedSlideIdText
+      && !slidesStore.isSlideSwitching
+      && slidesStore.currentSlideId !== selectedSlideIdText
+      && `${slidesStore.persistFailureMessage ?? ''}`.trim(),
+    );
+    if (hasSelectedSlideSwitchFailure) {
+      output[selectedSlideIdText] = true;
+    }
+    return output;
+  }, [
+    groupSlides,
+    selectedSlideId,
+    slideNameById,
+    slidesStore.currentSlideId,
+    slidesStore.isSlideSwitching,
+    slidesStore.persistFailureMessage,
+  ]);
+  const getIsSlideKnown = (slideIdRaw = '') => {
+    const slideId = `${slideIdRaw ?? ''}`.trim();
+    if (!slideId) return false;
+    return Object.prototype.hasOwnProperty.call(slideNameById, slideId);
+  };
 
   useEffect(() => {
     if (groupSlides.length <= 0) {
@@ -88,8 +121,9 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   useEffect(() => {
     const nextSlideId = `${selectedSlideId ?? ''}`.trim();
     if (!nextSlideId) return;
+    if (!getIsSlideKnown(nextSlideId)) return;
     slidesStore.requestSwitchSlide(nextSlideId);
-  }, [selectedSlideId, slidesStore]);
+  }, [selectedSlideId, slidesStore, slideNameById]);
 
   useEffect(() => {
     setSearchParams((prevParams) => {
@@ -125,6 +159,19 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const selectedSlideName = `${slidesGroupStore.slideNameById?.[selectedSlideId] ?? ''}`.trim() || selectedSlideId;
   const selectedFolderPathText = getFolderPathText(selectedSlide?.path ?? '');
   const isSelectedSlideInGroup = Boolean(selectedSlide);
+  const isSelectedSlideKnown = getIsSlideKnown(selectedSlideId);
+  const isSelectedSlideSwitchFailed = Boolean(
+    selectedSlideId
+    && !slidesStore.isSlideSwitching
+    && slidesStore.currentSlideId !== selectedSlideId
+    && `${slidesStore.persistFailureMessage ?? ''}`.trim(),
+  );
+  const isSelectedSlideUnavailable = isSelectedSlideInGroup && (!isSelectedSlideKnown || isSelectedSlideSwitchFailed);
+  const selectedSlideUnavailableMessage = !isSelectedSlideInGroup
+    ? ''
+    : (!isSelectedSlideKnown
+      ? `Slide does not exist or cannot be found: ${selectedSlideId}`
+      : `${slidesStore.persistFailureMessage ?? ''}`.trim() || `Failed to load slide: ${selectedSlideId}`);
 
   const currentPage = slidesStore.getCurrentPageData() ?? slidesStore.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
@@ -158,13 +205,33 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
     const nextSlides = groupSlides.filter((slideItem) => `${slideItem?.slideId ?? ''}`.trim() !== slideId);
     const updateResult = await slidesGroupStore.requestUpdateGroupSlides(groupId, nextSlides);
     if (!updateResult?.ok) return;
+    if (!getIsSlideKnown(slideId)) {
+      const nextSelectedSlideId = `${nextSlides[0]?.slideId ?? ''}`.trim();
+      setSelectedSlideId(nextSelectedSlideId);
+      return;
+    }
     await slidesStore.requestSwitchSlide(slideId);
+    if (`${slidesStore.currentSlideId ?? ''}`.trim() !== slideId) {
+      const nextSelectedSlideId = `${nextSlides[0]?.slideId ?? ''}`.trim();
+      setSelectedSlideId(nextSelectedSlideId);
+      return;
+    }
     const deleteResult = await slidesStore.requestDeleteCurrentSlide();
     if (!deleteResult?.ok) {
       await slidesGroupStore.requestLoadGroup(groupId);
       await slidesGroupStore.requestLoadOverview();
       return;
     }
+    const nextSelectedSlideId = `${nextSlides[0]?.slideId ?? ''}`.trim();
+    setSelectedSlideId(nextSelectedSlideId);
+  };
+
+  const requestExcludeSlideFromGroup = async (slideIdRaw = '') => {
+    const slideId = `${slideIdRaw ?? ''}`.trim();
+    if (!slideId) return;
+    const nextSlides = groupSlides.filter((slideItem) => `${slideItem?.slideId ?? ''}`.trim() !== slideId);
+    const result = await slidesGroupStore.requestUpdateGroupSlides(groupId, nextSlides);
+    if (!result?.ok) return;
     const nextSelectedSlideId = `${nextSlides[0]?.slideId ?? ''}`.trim();
     setSelectedSlideId(nextSelectedSlideId);
   };
@@ -212,10 +279,12 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
           <GroupViewObjectTree
             groupData={groupData}
             slideNameById={slidesGroupStore.slideNameById}
+            missingSlideIdMap={missingSlideIdMap}
             selectedSlideId={selectedSlideId}
             onSelectSlide={(slideId) => setSelectedSlideId(`${slideId ?? ''}`.trim())}
             onRequestCreateSlideUnderFolder={(folderPathRaw) => requestCreateSlideUnderFolder(folderPathRaw)}
             onRequestDeleteSlide={(slideId) => requestDeleteSlideFromGroup(slideId)}
+            onRequestExcludeSlideFromGroup={(slideId) => requestExcludeSlideFromGroup(slideId)}
             onRequestChangeSlidePath={(slideId, path) => {
               setPathChangeState({
                 slideId: `${slideId ?? ''}`.trim(),
@@ -352,6 +421,21 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
             <div className="group-view-slide-body">
               {!isSelectedSlideInGroup ? (
                 <div className="group-view-empty">No slide in current group</div>
+              ) : isSelectedSlideUnavailable ? (
+                <div className="group-view-missing-slide-panel">
+                  <div className="group-view-missing-slide-title">Slide not available</div>
+                  <div className="group-view-missing-slide-message">
+                    {selectedSlideUnavailableMessage}
+                  </div>
+                  <button
+                    className="group-view-missing-slide-btn"
+                    type="button"
+                    disabled={slidesGroupStore.isSubmitting}
+                    onClick={() => requestExcludeSlideFromGroup(selectedSlideId)}
+                  >
+                    Exclude from Group
+                  </button>
+                </div>
               ) : isStackMode ? (
                 <div className="group-view-stack-wrap">
                   {pageIdsForStack.map((pageId) => {

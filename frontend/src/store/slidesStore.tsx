@@ -1435,7 +1435,7 @@ class SlidesStore {
     };
   }
 
-  requestContainerCompDataUpdate(containerId, nextCompDataPartial) {
+  requestContainerCompDataUpdate(containerId, nextCompDataPartial, options: any = {}) {
     if (this.isPersisting) return;
     const containerData = this.getContainerData(containerId);
     if (!containerData) return;
@@ -1448,6 +1448,7 @@ class SlidesStore {
         ...(nextCompDataPartial ?? {}),
       },
     };
+    if (options?.shouldMarkDirty === false) return;
     this.markCompDirtyByContainerId(containerId, 'updated');
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { FolderView, PanelPopup } from '@wwf971/react-comp-misc';
+import { FolderView, Menu, PanelPopup } from '@wwf971/react-comp-misc';
 import { useNavigate } from 'react-router-dom';
 import './OverviewPage.css';
 
@@ -8,10 +8,22 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
   const navigate = useNavigate();
   const [isCreatePopupVisible, setIsCreatePopupVisible] = useState(false);
   const [isDeletePopupVisible, setIsDeletePopupVisible] = useState(false);
+  const [orphanMenuState, setOrphanMenuState] = useState(null);
 
   useEffect(() => {
     slidesGroupStore.requestLoadOverview();
   }, [slidesGroupStore]);
+
+  const orphanMissingSlideIdMap = useMemo(() => {
+    const output = {};
+    (slidesGroupStore.orphanSlideItems ?? []).forEach((slideItem) => {
+      const slideId = `${slideItem?.id ?? ''}`.trim();
+      if (!slideId) return;
+      if (Object.prototype.hasOwnProperty.call(slidesGroupStore.slideNameById ?? {}, slideId)) return;
+      output[slideId] = true;
+    });
+    return output;
+  }, [slidesGroupStore.orphanSlideItems, slidesGroupStore.slideNameById]);
 
   const orphanRows = useMemo(() => {
     return (slidesGroupStore.orphanSlideItems ?? []).map((slideItem) => ({
@@ -19,9 +31,10 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
       data: {
         name: slideItem.name || slideItem.id,
         slideId: slideItem.id,
+        isMissing: orphanMissingSlideIdMap[`${slideItem?.id ?? ''}`.trim()] === true,
       },
     }));
-  }, [slidesGroupStore.orphanSlideItems]);
+  }, [slidesGroupStore.orphanSlideItems, orphanMissingSlideIdMap]);
 
   const groupRows = useMemo(() => {
     return (slidesGroupStore.groupItems ?? []).map((groupItem) => ({
@@ -57,6 +70,31 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
             showStatusBar={false}
             loading={slidesGroupStore.isOverviewLoading}
             loadingMessage="loading orphan slides"
+            getBodyComponent={(columnId) => {
+              if (columnId !== 'name') return null;
+              return ({ data, rowId }) => {
+                const isMissing = orphanMissingSlideIdMap[`${rowId ?? ''}`.trim()] === true;
+                return (
+                  <div className="overview-page-orphan-name-cell">
+                    <span>{`${data ?? ''}`}</span>
+                    {isMissing ? (
+                      <span className="overview-page-orphan-missing-mark" title="slide not found">!</span>
+                    ) : null}
+                  </div>
+                );
+              };
+            }}
+            onRowContextMenu={(event, rowId) => {
+              const slideId = `${rowId ?? ''}`.trim();
+              if (!slideId) return;
+              event.preventDefault();
+              event.stopPropagation();
+              setOrphanMenuState({
+                x: event.clientX,
+                y: event.clientY,
+                slideId,
+              });
+            }}
             onRowDoubleClick={(slideId) => {
               if (!slideId) return;
               navigate(`/slide/${slideId}`);
@@ -175,6 +213,23 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
             }
           }}
           isLoading={slidesGroupStore.isSubmitting}
+        />
+      ) : null}
+
+      {orphanMenuState ? (
+        <Menu
+          items={[
+            { type: 'item', name: 'Delete', data: { action: 'delete-orphan-slide' } },
+          ]}
+          position={{ x: orphanMenuState.x, y: orphanMenuState.y }}
+          onClose={() => setOrphanMenuState(null)}
+          onItemClick={async (item) => {
+            if (item?.data?.action !== 'delete-orphan-slide') return;
+            const slideId = `${orphanMenuState?.slideId ?? ''}`.trim();
+            setOrphanMenuState(null);
+            if (!slideId) return;
+            await slidesGroupStore.requestDeleteSlide(slideId);
+          }}
         />
       ) : null}
     </div>

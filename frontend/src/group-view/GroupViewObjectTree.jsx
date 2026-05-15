@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { FolderIcon, InfoIconWithTooltip, Menu, TreeView } from '@wwf971/react-comp-misc';
 import { normalizeFolderPath, normalizePermanentFolderPath } from './groupViewTreeUtils';
 
-const toTreeData = (groupData, slideNameById, expandedFolderById) => {
+const toTreeData = (groupData, slideNameById, expandedFolderById, missingSlideIdMap) => {
   const itemById = {};
   const childrenById = {};
   const rootIds = [];
@@ -74,6 +74,7 @@ const toTreeData = (groupData, slideNameById, expandedFolderById) => {
       nodeType: 'slide',
       slideId,
       path: folderPath,
+      isMissing: missingSlideIdMap?.[slideId] === true,
       isLeaf: true,
       childrenIds: [],
       isExpanded: false,
@@ -158,17 +159,19 @@ const GroupViewObjectTree = ({
   onSelectSlide,
   onRequestCreateSlideUnderFolder,
   onRequestDeleteSlide,
+  onRequestExcludeSlideFromGroup,
   onRequestChangeSlidePath,
   onRequestSetFolderPersisting,
   onRequestCancelFolderPersisting,
+  missingSlideIdMap,
 }) => {
   const [expandedFolderById, setExpandedFolderById] = useState({});
   const [menuState, setMenuState] = useState(null);
   const selectedTreeItemId = selectedSlideId ? `slide:${selectedSlideId}` : '';
 
   const treeData = useMemo(() => {
-    return toTreeData(groupData, slideNameById, expandedFolderById);
-  }, [groupData, slideNameById, expandedFolderById]);
+    return toTreeData(groupData, slideNameById, expandedFolderById, missingSlideIdMap);
+  }, [groupData, slideNameById, expandedFolderById, missingSlideIdMap]);
 
   const openContextMenuAt = (x, y, nextMenuState) => {
     setMenuState(null);
@@ -276,7 +279,10 @@ const GroupViewObjectTree = ({
                   data-slide-id={`${nodeData?.slideId ?? ''}`.trim()}
                   data-path={`${nodeData?.path ?? ''}`.trim()}
                 >
-                  {`${nodeData?.text ?? ''}`.trim()}
+                  <span className="group-view-tree-item-slide-text">{`${nodeData?.text ?? ''}`.trim()}</span>
+                  {nodeData?.isMissing ? (
+                    <span className="group-view-tree-item-missing-mark" title="slide not found">!</span>
+                  ) : null}
                 </div>
               );
             }
@@ -326,7 +332,8 @@ const GroupViewObjectTree = ({
               ];
             }
             return [
-              { type: 'item', name: 'Delete Slide', data: { action: 'delete-slide' } },
+              { type: 'item', name: 'Delete', data: { action: 'delete-slide' } },
+              { type: 'item', name: 'Exclude from Group', data: { action: 'exclude-slide' } },
               { type: 'item', name: 'Change Path', data: { action: 'change-path' } },
             ];
           })()}
@@ -399,6 +406,11 @@ const GroupViewObjectTree = ({
             }
             if (item?.data?.action === 'delete-slide') {
               onRequestDeleteSlide(`${menuState?.slideId ?? ''}`);
+              setMenuState(null);
+              return;
+            }
+            if (item?.data?.action === 'exclude-slide') {
+              onRequestExcludeSlideFromGroup(`${menuState?.slideId ?? ''}`);
               setMenuState(null);
               return;
             }

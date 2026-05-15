@@ -349,6 +349,37 @@ class SlidesGroupStore {
     }
   }
 
+  async requestDeleteSlide(slideIdRaw: string) {
+    if (this.isSubmitting) return { ok: false };
+    const slideId = `${slideIdRaw ?? ''}`.trim();
+    if (!slideId) return { ok: false, message: 'slideId is required' };
+    runInAction(() => {
+      this.isSubmitting = true;
+      this.errorText = '';
+    });
+    try {
+      const result = await this.requestJson(`/api/slide/slides/${encodeURIComponent(slideId)}`, {
+        method: 'DELETE',
+      });
+      if (!result.isOk || !result.payload?.ok) {
+        runInAction(() => {
+          this.errorText = `${result.payload?.message ?? 'Failed to delete slide'}`;
+        });
+        return { ok: false };
+      }
+      await this.requestLoadOverview();
+      const currentGroupId = `${this.currentGroup?.id ?? ''}`.trim();
+      if (currentGroupId) {
+        await this.requestLoadGroup(currentGroupId);
+      }
+      return { ok: true };
+    } finally {
+      runInAction(() => {
+        this.isSubmitting = false;
+      });
+    }
+  }
+
   async requestUpdateGroupSlides(groupIdRaw: string, nextSlidesRaw: any[], nextFolderPathsRaw: any[] | undefined = undefined) {
     if (this.isSubmitting) return { ok: false };
     const groupId = `${groupIdRaw ?? ''}`.trim();

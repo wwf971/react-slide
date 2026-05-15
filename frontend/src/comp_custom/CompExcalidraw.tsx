@@ -94,6 +94,38 @@ const buildElementsSnapshot = ({
   };
 };
 
+const buildElementsSnapshotJson = ({
+  elements,
+  files,
+  viewBackgroundColor,
+  sceneVersion,
+}: any) => {
+  return JSON.stringify(
+    buildElementsSnapshot({
+      elements,
+      files,
+      viewBackgroundColor,
+      sceneVersion,
+    }),
+  );
+};
+
+const isSameSceneViewport = (left: any, right: any) => {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  const leftZoom = Number(left.zoomBySlideWidth);
+  const rightZoom = Number(right.zoomBySlideWidth);
+  const leftScrollX = Number(left.scrollX ?? 0);
+  const rightScrollX = Number(right.scrollX ?? 0);
+  const leftScrollY = Number(left.scrollY ?? 0);
+  const rightScrollY = Number(right.scrollY ?? 0);
+  return (
+    Math.abs(leftZoom - rightZoom) < 0.000001 &&
+    Math.abs(leftScrollX - rightScrollX) < 0.1 &&
+    Math.abs(leftScrollY - rightScrollY) < 0.1
+  );
+};
+
 const computeAppliedViewport = (
   sceneViewport: any,
   slidePixelX: number,
@@ -142,6 +174,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   });
   const legacyViewportRef = useRef<any>(null);
   const hasAppliedInitialViewportRef = useRef(false);
+  const isSceneHydratingRef = useRef(true);
   const prevIsPlayModeRef = useRef(false);
   const containerIdRef = useRef<string>(containerId);
   containerIdRef.current = containerId;
@@ -158,7 +191,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       const parsed = parseSceneText(text, sceneVersion);
       if (!parsed.ok) {
         legacyViewportRef.current = null;
-        setInitialDataForExcalidraw({
+        const emptyInitialData = {
           elements: [],
           files: {},
           appState: {
@@ -166,11 +199,27 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
             collaborators: new Map(),
           },
           sceneVersion,
+        };
+        setInitialDataForExcalidraw(emptyInitialData);
+        lastElementsSnapshotJsonRef.current = buildElementsSnapshotJson({
+          elements: [],
+          files: {},
+          viewBackgroundColor: '#ffffff',
+          sceneVersion,
         });
+        isSceneHydratingRef.current = true;
         return false;
       }
       legacyViewportRef.current = parsed.legacyViewport ?? null;
-      setInitialDataForExcalidraw(parsed.initialData);
+      const initialData = parsed.initialData;
+      setInitialDataForExcalidraw(initialData);
+      lastElementsSnapshotJsonRef.current = buildElementsSnapshotJson({
+        elements: initialData.elements ?? [],
+        files: initialData.files ?? {},
+        viewBackgroundColor: initialData.appState?.viewBackgroundColor ?? '#ffffff',
+        sceneVersion,
+      });
+      isSceneHydratingRef.current = true;
       return true;
     };
 
@@ -210,10 +259,10 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   }, [sceneResourceId, isReadOnly, store, containerId, sceneVersion]);
 
   useEffect(() => {
-    lastElementsSnapshotJsonRef.current = '';
     prevAppliedViewportRef.current = { zoomValue: 1, scrollX: 0, scrollY: 0 };
     legacyViewportRef.current = null;
     hasAppliedInitialViewportRef.current = false;
+    isSceneHydratingRef.current = true;
   }, [containerId, sceneResourceId]);
 
   useEffect(() => {
@@ -300,7 +349,8 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     if (!isFinitePositive(slidePixelX)) return;
 
     let effectiveViewport = sceneViewport;
-    if (legacyViewportRef.current) {
+    const hasPersistedSceneViewport = isFinitePositive(Number(sceneViewport?.zoomBySlideWidth));
+    if (legacyViewportRef.current && !hasPersistedSceneViewport) {
       const legacy = legacyViewportRef.current;
       let zoomBySlideWidth = Number(legacy.zoomBySlideWidth);
       if (!isFinitePositive(zoomBySlideWidth) && isFinitePositive(Number(legacy.zoomValue))) {
@@ -312,13 +362,15 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           scrollX: Number.isFinite(legacy.scrollX) ? Number(legacy.scrollX) : 0,
           scrollY: Number.isFinite(legacy.scrollY) ? Number(legacy.scrollY) : 0,
         };
-        if (!isReadOnly) {
+        if (!isReadOnly && !isSameSceneViewport(sceneViewport, effectiveViewport)) {
           store.requestContainerCompDataUpdate(containerId, {
             sceneViewport: effectiveViewport,
           });
         }
         legacyViewportRef.current = null;
       }
+    } else if (legacyViewportRef.current) {
+      legacyViewportRef.current = null;
     }
 
     const { zoomValue, scrollX, scrollY } = computeAppliedViewport(effectiveViewport, slidePixelX);
@@ -366,8 +418,12 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     if (!isFinitePositive(slidePixelX)) return;
     if (!isFinitePositive(zoomValue)) return;
     const zoomBySlideWidth = zoomValue / slidePixelX;
+    const nextSceneViewport = { zoomBySlideWidth, scrollX, scrollY };
+    const persistedSceneViewport =
+      store.getContainerCompData(containerId)?.compData?.sceneViewport ?? null;
+    if (isSameSceneViewport(persistedSceneViewport, nextSceneViewport)) return;
     store.requestContainerCompDataUpdate(containerId, {
-      sceneViewport: { zoomBySlideWidth, scrollX, scrollY },
+      sceneViewport: nextSceneViewport,
     });
   };
 
@@ -452,6 +508,11 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       sceneVersion,
     });
     const nextSnapshotJson = JSON.stringify(snapshot);
+    if (isSceneHydratingRef.current) {
+      lastElementsSnapshotJsonRef.current = nextSnapshotJson;
+      isSceneHydratingRef.current = false;
+      return;
+    }
     if (nextSnapshotJson === lastElementsSnapshotJsonRef.current) return;
     lastElementsSnapshotJsonRef.current = nextSnapshotJson;
     pendingElementsSnapshotJsonRef.current = nextSnapshotJson;

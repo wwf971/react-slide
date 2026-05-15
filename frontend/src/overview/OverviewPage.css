@@ -58,3 +58,14 @@
   padding: 4px 6px;
   font-size: 12px;
 }
+
+.overview-page-orphan-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.overview-page-orphan-missing-mark {
+  color: #c23d3d;
+  font-weight: 600;
+}

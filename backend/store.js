@@ -683,13 +683,22 @@ const updateSlideGroupSlides = async (ctx, groupIdRaw, nextSlidesRaw, nextFolder
     ? normalizeSlideGroupFolderPaths(targetGroup.folderPaths)
     : normalizeSlideGroupFolderPaths(nextFolderPathsRaw);
   const slideIdSet = {};
+  const currentGroupSlideIdSet = {};
   slides.forEach((slide) => {
     const slideId = `${slide?.id ?? ''}`.trim();
     if (!slideId) return;
     slideIdSet[slideId] = true;
   });
+  (targetGroup?.slides ?? []).forEach((slideItem) => {
+    const slideId = `${slideItem?.slideId ?? ''}`.trim();
+    if (!slideId) return;
+    currentGroupSlideIdSet[slideId] = true;
+  });
   for (const slideItem of nextSlides) {
-    if (!slideIdSet[slideItem.slideId]) {
+    if (slideIdSet[slideItem.slideId]) {
+      continue;
+    }
+    if (!currentGroupSlideIdSet[slideItem.slideId]) {
       return { ok: false, message: `slide not found: ${slideItem.slideId}` };
     }
   }
