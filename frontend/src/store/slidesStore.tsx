@@ -126,7 +126,7 @@ class SlidesStore {
   isFullWindowMode = false;
   slidesPersistStore: any = null;
   slideItems: any[] = [{ id: 'local-demo', name: 'Local Demo' }];
-  currentSlideId = 'local-demo';
+  slideCurrentId = 'local-demo';
   slideRuntimeBySlideId: any = {};
   dirtyPageStateBySlideId: any = {};
   containerPageIdByContainerId: any = {};
@@ -166,8 +166,8 @@ class SlidesStore {
 
     this.containerPageIdByContainerId = buildContainerPageMap(this.pageDataById);
     this.normalizeAllContainerLayers();
-    this.slideRuntimeBySlideId[this.currentSlideId] = this.buildRuntimeSnapshot();
-    this.dirtyPageStateBySlideId[this.currentSlideId] = cloneData(this.dirtyPageStateById);
+    this.slideRuntimeBySlideId[this.slideCurrentId] = this.buildRuntimeSnapshot();
+    this.dirtyPageStateBySlideId[this.slideCurrentId] = cloneData(this.dirtyPageStateById);
 
     makeAutoObservable(this, {}, { autoBind: true });
   }
@@ -297,7 +297,7 @@ class SlidesStore {
   }
 
   cacheCurrentSlideState() {
-    const slideId = this.currentSlideId;
+    const slideId = this.slideCurrentId;
     if (!slideId) return;
     this.slideRuntimeBySlideId[slideId] = this.buildRuntimeSnapshot();
     this.dirtyPageStateBySlideId[slideId] = cloneData(this.dirtyPageStateById ?? {});
@@ -327,11 +327,11 @@ class SlidesStore {
       }
       runInAction(() => {
         this.slideItems = result.slides;
-        this.currentSlideId = result.slides[0].id;
+        this.slideCurrentId = result.slides[0].id;
         this.slideRuntimeBySlideId = {};
         this.dirtyPageStateBySlideId = {};
       });
-      const loadResult = await this.slidesPersistStore.getSlideData(this.currentSlideId);
+      const loadResult = await this.slidesPersistStore.getSlideData(this.slideCurrentId);
       if (!loadResult?.ok || !loadResult.data) {
         runInAction(() => {
           this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide data';
@@ -355,7 +355,7 @@ class SlidesStore {
     if (!this.slidesPersistStore) return { ok: false };
     runInAction(() => {
       this.slideItems = [];
-      this.currentSlideId = '';
+      this.slideCurrentId = '';
       this.slideRuntimeBySlideId = {};
       this.dirtyPageStateBySlideId = {};
       this.dirtyPageStateById = {};
@@ -367,7 +367,7 @@ class SlidesStore {
   }
 
   async requestSwitchSlide(slideId) {
-    if (!slideId || this.currentSlideId === slideId) return;
+    if (!slideId || this.slideCurrentId === slideId) return;
     if (this.isPersisting || this.isSlideSwitching) return;
     this.cacheCurrentSlideState();
     runInAction(() => {
@@ -377,7 +377,7 @@ class SlidesStore {
       const isRestoredFromCache = this.restoreSlideStateFromCache(slideId);
       if (isRestoredFromCache) {
         runInAction(() => {
-          this.currentSlideId = slideId;
+          this.slideCurrentId = slideId;
           this.persistFailureMessage = '';
         });
         return { ok: true };
@@ -390,7 +390,7 @@ class SlidesStore {
         return;
       }
       runInAction(() => {
-        this.currentSlideId = slideId;
+        this.slideCurrentId = slideId;
         this.replaceRuntimeData(loadResult.data);
         this.cacheCurrentSlideState();
         this.persistFailureMessage = '';
@@ -414,7 +414,7 @@ class SlidesStore {
     }
     runInAction(() => {
       this.slideItems = [...this.slideItems, result.slide];
-      this.currentSlideId = result.slide.id;
+      this.slideCurrentId = result.slide.id;
     });
     if (result.data) {
       runInAction(() => {
@@ -439,7 +439,7 @@ class SlidesStore {
   async requestRenameCurrentSlide(name) {
     const nextName = `${name ?? ''}`.trim();
     if (!nextName) return { ok: false };
-    const result = await this.slidesPersistStore.renameSlide(this.currentSlideId, nextName);
+    const result = await this.slidesPersistStore.renameSlide(this.slideCurrentId, nextName);
     if (!result?.ok) {
       runInAction(() => {
         this.persistFailureMessage = result?.message ?? 'Failed to rename slide';
@@ -448,7 +448,7 @@ class SlidesStore {
     }
     runInAction(() => {
       this.slideItems = this.slideItems.map((item) => {
-        if (item.id !== this.currentSlideId) return item;
+        if (item.id !== this.slideCurrentId) return item;
         return { ...item, name: nextName };
       });
       this.persistFailureMessage = '';
@@ -467,11 +467,11 @@ class SlidesStore {
     }
     runInAction(() => {
       this.slideItems = result.slides;
-      this.currentSlideId = result.slides[0].id;
+      this.slideCurrentId = result.slides[0].id;
       this.slideRuntimeBySlideId = {};
       this.dirtyPageStateBySlideId = {};
     });
-    const loadResult = await this.slidesPersistStore.getSlideData(this.currentSlideId);
+    const loadResult = await this.slidesPersistStore.getSlideData(this.slideCurrentId);
     if (!loadResult?.ok || !loadResult.data) {
       runInAction(() => {
         this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide after re-init';
@@ -574,7 +574,7 @@ class SlidesStore {
     if (!this.slidesPersistStore) {
       return { ok: false };
     }
-    const deletingSlideId = this.currentSlideId;
+    const deletingSlideId = this.slideCurrentId;
     if (!deletingSlideId) return { ok: false };
     this.cacheCurrentSlideState();
     runInAction(() => {
@@ -601,7 +601,7 @@ class SlidesStore {
       if (nextSlideItems.length === 0) {
         runInAction(() => {
           this.slideItems = [];
-          this.currentSlideId = '';
+          this.slideCurrentId = '';
           this.slideRuntimeBySlideId = {};
           this.dirtyPageStateBySlideId = {};
           this.replaceRuntimeData({
@@ -622,7 +622,7 @@ class SlidesStore {
       const nextSlideId = nextSlideItems[0].id;
       runInAction(() => {
         this.slideItems = nextSlideItems;
-        this.currentSlideId = nextSlideId;
+        this.slideCurrentId = nextSlideId;
       });
       const isRestoredFromCache = this.restoreSlideStateFromCache(nextSlideId);
       if (isRestoredFromCache) {
@@ -658,7 +658,7 @@ class SlidesStore {
     if (!this.slidesPersistStore) {
       return { ok: false };
     }
-    const deletingSlideId = this.currentSlideId;
+    const deletingSlideId = this.slideCurrentId;
     const deletingPageId = this.metadata.currentPageId || '';
     if (!deletingSlideId || !deletingPageId) return { ok: false };
     if ((this.metadata.pageIds ?? []).length <= 1) {
@@ -796,7 +796,7 @@ class SlidesStore {
   async requestPersistDirtyPages() {
     if (this.isPersisting) return { ok: false, savedPageIds: [] };
     if (!this.slidesPersistStore) return { ok: false, savedPageIds: [] };
-    if (!this.currentSlideId) return { ok: false, savedPageIds: [] };
+    if (!this.slideCurrentId) return { ok: false, savedPageIds: [] };
     const dirtyPageIds = this.getDirtyPageIds();
     if (dirtyPageIds.length === 0) return { ok: true, savedPageIds: [] };
 
@@ -808,7 +808,7 @@ class SlidesStore {
         this.persistFailureMessage = '';
       });
       const result = await this.slidesPersistStore.saveDirtyPages(
-        this.currentSlideId,
+        this.slideCurrentId,
         {
           metadata: this.metadata,
           pageDataById: this.pageDataById,

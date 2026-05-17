@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import Slides from './slide/Slides';
-import OverviewPage from './overview/OverviewPage';
+import SlideOverview from './overview/SlideOverview';
 import GroupViewPage from './group-view/GroupViewPage';
 import CompMetadata from './comp_custom/CompMetadata';
 import CompTextSingleline from './comp_custom/CompTextSingleline';
@@ -70,7 +70,12 @@ function App() {
         <Routes>
           <Route
             path="/overview"
-            element={<OverviewPage slidesGroupStore={slidesGroupStore} />}
+            element={(
+              <SlideOverview
+                slidesGroupStore={slidesGroupStore}
+                backendStore={backendStore}
+              />
+            )}
           />
           <Route
             path="/group/:groupId"

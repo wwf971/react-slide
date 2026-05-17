@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { FolderView, Menu, PanelPopup } from '@wwf971/react-comp-misc';
 import { useNavigate } from 'react-router-dom';
-import './OverviewPage.css';
+import SlidesOverviewHeader from './SlidesOverviewHeader';
+import './SlideOverview.css';
 
-const OverviewPage = observer(({ slidesGroupStore }) => {
+const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
   const navigate = useNavigate();
   const [isCreatePopupVisible, setIsCreatePopupVisible] = useState(false);
   const [isDeletePopupVisible, setIsDeletePopupVisible] = useState(false);
@@ -50,10 +51,14 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
   const selectedGroupId = `${slidesGroupStore.selectedOverviewGroupId ?? ''}`.trim();
 
   return (
-    <div className="overview-page-root">
-      <div className="overview-page-main">
-        <div className="overview-page-block">
-          <div className="overview-page-title-line">Orphan Slides</div>
+    <div className="slide-overview-root">
+      <div className="slide-overview-main">
+        <SlidesOverviewHeader
+          slidesGroupStore={slidesGroupStore}
+          backendStore={backendStore}
+        />
+        <div className="slide-overview-block">
+          <div className="slide-overview-title-line">Orphan Slides</div>
           <FolderView
             columns={{
               name: { data: 'name', align: 'left' },
@@ -75,10 +80,10 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
               return ({ data, rowId }) => {
                 const isMissing = orphanMissingSlideIdMap[`${rowId ?? ''}`.trim()] === true;
                 return (
-                  <div className="overview-page-orphan-name-cell">
+                  <div className="slide-overview-orphan-name-cell">
                     <span>{`${data ?? ''}`}</span>
                     {isMissing ? (
-                      <span className="overview-page-orphan-missing-mark" title="slide not found">!</span>
+                      <span className="slide-overview-orphan-missing-mark" title="slide not found">!</span>
                     ) : null}
                   </div>
                 );
@@ -102,11 +107,11 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
           />
         </div>
 
-        <div className="overview-page-block">
-          <div className="overview-page-title-line">Slide Groups</div>
-          <div className="overview-page-button-line">
+        <div className="slide-overview-block">
+          <div className="slide-overview-title-line">Slide Groups</div>
+          <div className="slide-overview-button-line">
             <button
-              className="overview-page-btn"
+              className="slide-overview-btn"
               type="button"
               disabled={slidesGroupStore.isSubmitting}
               onClick={() => {
@@ -116,7 +121,7 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
               Create Group
             </button>
             <button
-              className="overview-page-btn"
+              className="slide-overview-btn"
               type="button"
               disabled={!selectedGroupId || slidesGroupStore.isSubmitting}
               onClick={() => {
@@ -126,7 +131,7 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
               Delete Group
             </button>
             <button
-              className="overview-page-btn"
+              className="slide-overview-btn"
               type="button"
               disabled={slidesGroupStore.isOverviewLoading}
               onClick={() => {
@@ -166,7 +171,7 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
         </div>
 
         {slidesGroupStore.errorText ? (
-          <div className="overview-page-error-line">{slidesGroupStore.errorText}</div>
+          <div className="slide-overview-error-line">{slidesGroupStore.errorText}</div>
         ) : null}
       </div>
 
@@ -236,4 +241,4 @@ const OverviewPage = observer(({ slidesGroupStore }) => {
   );
 });
 
-export default OverviewPage;
+export default SlideOverview;

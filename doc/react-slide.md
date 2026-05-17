@@ -52,9 +52,6 @@ For how to implement/things you need to be careful about when implementing a cus
 `CompIFrame` can open an iframe panel outside container bounds by using runtime-only overflow visibility in `contentStore` (`setContainerOverflowVisible`), so iframe open/close state is not persisted.
 
 
+## Development
 
-to run test server:
-
-```
-pnpm run slides
-```
+See `/doc/dev.md`

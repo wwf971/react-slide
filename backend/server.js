@@ -3,7 +3,12 @@ import cors from 'cors';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BACKEND_PORT } from './config.js';
+import {
+  BACKEND_PORT,
+  OBJECT_STORAGE_LIST,
+  OBJECT_STORAGE_INDEX,
+  findObjectStoragePresetByKey,
+} from './config.js';
 import {
   createObjectStorageContext,
   ensureBackendStoreReady,
@@ -81,27 +86,54 @@ const getTimestampToken = () => {
 };
 
 const createSlideBackendApp = async () => {
-  const storeContext = createObjectStorageContext();
+  let currentObjectStorageIndex = OBJECT_STORAGE_INDEX;
+  let storeContext = createObjectStorageContext(
+    OBJECT_STORAGE_LIST[currentObjectStorageIndex] ?? OBJECT_STORAGE_LIST[0],
+  );
   let startupErrorText = '';
+
+  const getCurrentPreset = () => {
+    return OBJECT_STORAGE_LIST[currentObjectStorageIndex] ?? OBJECT_STORAGE_LIST[0] ?? null;
+  };
+
+  const resetStoreContext = (preset) => {
+    storeContext = createObjectStorageContext(preset);
+    startupErrorText = '';
+    return storeContext;
+  };
+
+  const initializeStoreContext = async (ctx) => {
+    await initBackendStore(ctx);
+    startupErrorText = '';
+  };
+
   try {
-    await initBackendStore(storeContext);
+    await initializeStoreContext(storeContext);
   } catch (error) {
     startupErrorText = error instanceof Error ? error.message : 'failed to initialize object-storage backend';
   }
 
-  const toObjectStorageItem = (options = {}) => {
+  const toObjectStorageItem = (preset, options = {}) => {
     const errorMessage = `${options.errorMessage ?? ''}`.trim();
+    const currentPreset = getCurrentPreset();
+    const presetKey = `${preset?.KEY ?? ''}`.trim();
     return {
-      key: 'OBJECT_STORAGE',
-      label: 'object-storage',
-      databaseName: storeContext.info.spaceName,
-      host: storeContext.info.serviceUrl,
+      key: presetKey,
+      label: `${preset?.LABEL ?? presetKey}`,
+      databaseName: `${preset?.SPACE_NAME ?? ''}`,
+      host: `${preset?.SERVICE_URL ?? ''}`,
       port: 0,
-      isCurrent: true,
+      isCurrent: presetKey === `${currentPreset?.KEY ?? ''}`,
       isConnected: options.isConnected === true,
       isInError: Boolean(errorMessage),
       errorMessage,
     };
+  };
+
+  const testObjectStoragePreset = async (preset) => {
+    const testContext = createObjectStorageContext(preset);
+    await ensureBackendStoreReady(testContext);
+    return toObjectStorageItem(preset, { isConnected: true });
   };
 
   const app = express();
@@ -122,47 +154,123 @@ const createSlideBackendApp = async () => {
   });
 
   app.get('/api/slide/database/presets', async (_req, res) => {
-    let item = toObjectStorageItem({ isConnected: true });
-    try {
-      await ensureBackendStoreReady(storeContext);
-      item = toObjectStorageItem({ isConnected: true });
-    } catch (error) {
-      item = toObjectStorageItem({
-        isConnected: false,
-        errorMessage: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
-      });
-    }
+    const currentPreset = getCurrentPreset();
+    const databaseItems = await Promise.all(
+      OBJECT_STORAGE_LIST.map(async (preset) => {
+        if (preset.KEY === currentPreset?.KEY) {
+          try {
+            await ensureBackendStoreReady(storeContext);
+            return toObjectStorageItem(preset, { isConnected: true });
+          } catch (error) {
+            return toObjectStorageItem(preset, {
+              isConnected: false,
+              errorMessage: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
+            });
+          }
+        }
+        try {
+          return await testObjectStoragePreset(preset);
+        } catch (error) {
+          return toObjectStorageItem(preset, {
+            isConnected: false,
+            errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
+          });
+        }
+      }),
+    );
     res.json({
       ok: true,
-      currentDatabaseKey: 'OBJECT_STORAGE',
-      databaseItems: [item],
+      currentDatabaseKey: `${currentPreset?.KEY ?? ''}`,
+      databaseItems,
     });
   });
 
   app.post('/api/slide/database/test', async (req, res) => {
+    const presetKey = `${req.body?.databaseKey ?? ''}`.trim();
+    const preset = findObjectStoragePresetByKey(presetKey) ?? getCurrentPreset();
+    if (!preset) {
+      res.status(400).json({
+        ok: false,
+        message: 'object-storage preset not found',
+      });
+      return;
+    }
     try {
-      await ensureBackendStoreReady(storeContext);
+      const databaseItem = await testObjectStoragePreset(preset);
       res.json({
         ok: true,
-        databaseItem: toObjectStorageItem({ isConnected: true }),
+        databaseItem,
       });
     } catch (error) {
       res.status(400).json({
         ok: false,
-        message: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
-        databaseItem: toObjectStorageItem({
+        message: error instanceof Error ? error.message : 'failed to reach object-storage',
+        databaseItem: toObjectStorageItem(preset, {
           isConnected: false,
-          errorMessage: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage'),
+          errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
         }),
       });
     }
   });
 
-  app.post('/api/slide/database/switch', async (_req, res) => {
-    res.status(400).json({
-      ok: false,
-      message: 'database switch is disabled: react-note uses object-storage service by space name',
-    });
+  app.post('/api/slide/database/switch', async (req, res) => {
+    const presetKey = `${req.body?.databaseKey ?? ''}`.trim();
+    const preset = findObjectStoragePresetByKey(presetKey);
+    if (!preset) {
+      res.status(400).json({
+        ok: false,
+        message: 'object-storage preset not found',
+      });
+      return;
+    }
+    const nextIndex = OBJECT_STORAGE_LIST.findIndex((entry) => entry.KEY === preset.KEY);
+    if (nextIndex < 0) {
+      res.status(400).json({
+        ok: false,
+        message: 'object-storage preset not found',
+      });
+      return;
+    }
+    if (nextIndex === currentObjectStorageIndex) {
+      try {
+        await ensureBackendStoreReady(storeContext);
+        res.json({
+          ok: true,
+          currentDatabaseKey: preset.KEY,
+          databaseItem: toObjectStorageItem(preset, { isConnected: true }),
+        });
+      } catch (error) {
+        res.status(400).json({
+          ok: false,
+          message: error instanceof Error ? error.message : 'failed to reach object-storage',
+          databaseItem: toObjectStorageItem(preset, {
+            isConnected: false,
+            errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
+          }),
+        });
+      }
+      return;
+    }
+    currentObjectStorageIndex = nextIndex;
+    const nextContext = resetStoreContext(preset);
+    try {
+      await initializeStoreContext(nextContext);
+      res.json({
+        ok: true,
+        currentDatabaseKey: preset.KEY,
+        databaseItem: toObjectStorageItem(preset, { isConnected: true }),
+      });
+    } catch (error) {
+      startupErrorText = error instanceof Error ? error.message : 'failed to initialize object-storage backend';
+      res.status(400).json({
+        ok: false,
+        message: startupErrorText,
+        databaseItem: toObjectStorageItem(preset, {
+          isConnected: false,
+          errorMessage: startupErrorText,
+        }),
+      });
+    }
   });
 
   app.get('/api/slide/slides', async (_req, res) => {

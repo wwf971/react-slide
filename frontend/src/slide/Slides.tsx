@@ -15,20 +15,13 @@ const Slides = observer(({
 }: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
-  const totalPage = store.getTotalPageIndex();
-  const currentPageIndex = store.getCurrentPageIndex(currentPageId);
-  const isCurrentPageDirty = store.isPageDirty(currentPageId);
   const isPersisting = store.isPersisting;
   const isSlidesInitializing = store.isSlidesInitializing;
   const isSlideSwitching = store.isSlideSwitching;
   const isSlideDeleting = store.isSlideDeleting;
   const isPageDeleting = store.isPageDeleting;
   const slideItems = store.slideItems ?? [];
-  const currentSlideId = store.currentSlideId ?? '';
-  const currentSlide = slideItems.find((item: any) => item.id === currentSlideId) ?? null;
-  const persistFailureMessage = store.persistFailureMessage ?? '';
-  const isSettingBusy =
-    isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPageDeleting || isPersisting;
+  const slideCurrentId = store.slideCurrentId ?? '';
   const [isFullWindow, setIsFullWindow] = useState(false);
   const [ownerGroupIdBySlideId, setOwnerGroupIdBySlideId] = useState({});
 
@@ -50,7 +43,7 @@ const Slides = observer(({
     return () => {
       isCancelled = true;
     };
-  }, [store, slideItems.length, currentSlideId]);
+  }, [store, slideItems.length, slideCurrentId]);
 
   useEffect(() => {
     if (!backendStore) return;
@@ -64,7 +57,7 @@ const Slides = observer(({
       return `${item?.id ?? ''}`.trim() === nextSlideId;
     });
     if (!hasRequestedSlide) return;
-    if (`${currentSlideId ?? ''}`.trim() === nextSlideId) return;
+    if (`${slideCurrentId ?? ''}`.trim() === nextSlideId) return;
     store.requestSwitchSlide(nextSlideId);
   }, [requestedSlideId, slideItems, store]);
 
@@ -90,12 +83,12 @@ const Slides = observer(({
 
   useEffect(() => {
     if (!onCurrentSlideIdChange) return;
-    const nextSlideId = `${currentSlideId ?? ''}`.trim();
+    const nextSlideId = `${slideCurrentId ?? ''}`.trim();
     if (!nextSlideId) return;
     const requestedId = `${requestedSlideId ?? ''}`.trim();
     if (requestedId && requestedId !== nextSlideId) return;
     onCurrentSlideIdChange(nextSlideId);
-  }, [currentSlideId, onCurrentSlideIdChange, requestedSlideId]);
+  }, [slideCurrentId, onCurrentSlideIdChange, requestedSlideId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -142,93 +135,23 @@ const Slides = observer(({
 
   const prevPage = store.getPrevPageData(currentPageId);
   const nextPage = store.getNextPageData(currentPageId);
-  const currentGroupId = `${ownerGroupIdBySlideId?.[currentSlideId] ?? ''}`.trim();
+  const currentGroupId = `${ownerGroupIdBySlideId?.[slideCurrentId] ?? ''}`.trim();
 
   return (
     <SlideStoreProvider store={store}>
       <div className={`slide-system-root ${isFullWindow ? 'is-full-window' : ''}`}>
         <Header
-          isHidden={isFullWindow}
-          slideItems={slideItems}
-          currentSlideId={currentSlideId}
-          currentSlideName={currentSlide?.name ?? ''}
-          isSettingBusy={isSettingBusy}
-          isPersisting={isPersisting}
-          isSlideDeleting={isSlideDeleting}
-          currentPageIndex={currentPageIndex}
-          totalPage={totalPage}
-          isCurrentPageDirty={isCurrentPageDirty}
-          persistFailureMessage={persistFailureMessage}
-          hasPrevPage={Boolean(prevPage)}
-          hasNextPage={Boolean(nextPage)}
-          hasDeletePage={totalPage > 1 && currentPageIndex > 0}
-          hasMovePrevPage={currentPageIndex > 1}
-          hasMoveNextPage={currentPageIndex > 0 && currentPageIndex < totalPage}
-          onSwitchSlide={(slideId) => {
-            store.requestSwitchSlide(slideId);
+          slidesStore={store}
+          backendStore={backendStore ?? null}
+          config={{
+            isHidden: isFullWindow,
+            isViewInsideGroupButtonVisible: Boolean(currentGroupId),
           }}
-          onRenameSlide={(nextName) => {
-            store.requestRenameCurrentSlide(nextName);
-          }}
-          onCreateSlide={() => {
-            store.requestCreateSlide('Untitled');
-          }}
-          onDeleteSlide={() => {
-            store.requestDeleteCurrentSlide();
-          }}
-          onReinitDatabase={() => {
-            store.requestReinitDatabase();
-          }}
-          onDumpDatabase={() => {
-            store.requestDumpDatabaseSnapshot();
-          }}
-          databaseItems={backendStore?.databaseItems ?? []}
-          currentDatabaseKey={backendStore?.currentDatabaseKey ?? ''}
-          isDatabaseLoading={backendStore?.isDatabaseLoading ?? false}
-          isDatabaseSwitching={backendStore?.isDatabaseSwitching ?? false}
-          isDatabaseTesting={backendStore?.isDatabaseTesting ?? false}
-          testingDatabaseKey={backendStore?.testingDatabaseKey ?? ''}
-          loadFailureMessage={backendStore?.loadFailureMessage ?? ''}
-          onRefreshDatabases={() => {
-            backendStore?.requestLoadDatabases();
-          }}
-          onTestDatabase={(presetKey) => {
-            backendStore?.requestTestDatabase(presetKey);
-          }}
-          onSwitchDatabase={async (presetKey) => {
-            const result = await backendStore?.requestSwitchDatabase(presetKey);
-            if (!result?.ok) return;
-            await store.requestReloadAfterDatabaseSwitch();
-          }}
-          onCreatePageBefore={() => {
-            store.requestCreatePageBeforeCurrent();
-          }}
-          onCreatePageAfter={() => {
-            store.requestCreatePageAfterCurrent();
-          }}
-          onDeletePage={() => {
-            store.requestDeleteCurrentPage();
-          }}
-          onGoPrevPage={() => {
-            if (!prevPage) return;
-            store.setCurrentPage(prevPage.id);
-            store.clearSelectedContainer();
-          }}
-          onGoNextPage={() => {
-            if (!nextPage) return;
-            store.setCurrentPage(nextPage.id);
-            store.clearSelectedContainer();
-          }}
-          onMovePrevPage={() => {
-            store.requestMoveCurrentPageByOffset(-1);
-          }}
-          onMoveNextPage={() => {
-            store.requestMoveCurrentPageByOffset(1);
-          }}
-          isViewInsideGroupButtonVisible={Boolean(currentGroupId)}
-          onViewInsideGroup={() => {
-            if (!currentGroupId || !currentSlideId) return;
-            onRequestOpenGroupView?.(currentGroupId, currentSlideId);
+          onEvent={async (event) => {
+            if (event.type !== 'viewInsideGroup') return false;
+            if (!currentGroupId || !slideCurrentId) return true;
+            onRequestOpenGroupView?.(currentGroupId, slideCurrentId);
+            return true;
           }}
         />
         <div className="slide-system-canvas-wrap">

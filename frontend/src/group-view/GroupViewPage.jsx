@@ -54,7 +54,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
     const hasSelectedSlideSwitchFailure = Boolean(
       selectedSlideIdText
       && !slidesStore.isSlideSwitching
-      && slidesStore.currentSlideId !== selectedSlideIdText
+      && slidesStore.slideCurrentId !== selectedSlideIdText
       && `${slidesStore.persistFailureMessage ?? ''}`.trim(),
     );
     if (hasSelectedSlideSwitchFailure) {
@@ -65,7 +65,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
     groupSlides,
     selectedSlideId,
     slideNameById,
-    slidesStore.currentSlideId,
+    slidesStore.slideCurrentId,
     slidesStore.isSlideSwitching,
     slidesStore.persistFailureMessage,
   ]);
@@ -163,7 +163,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const isSelectedSlideSwitchFailed = Boolean(
     selectedSlideId
     && !slidesStore.isSlideSwitching
-    && slidesStore.currentSlideId !== selectedSlideId
+    && slidesStore.slideCurrentId !== selectedSlideId
     && `${slidesStore.persistFailureMessage ?? ''}`.trim(),
   );
   const isSelectedSlideUnavailable = isSelectedSlideInGroup && (!isSelectedSlideKnown || isSelectedSlideSwitchFailed);
@@ -174,12 +174,6 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
       : `${slidesStore.persistFailureMessage ?? ''}`.trim() || `Failed to load slide: ${selectedSlideId}`);
 
   const currentPage = slidesStore.getCurrentPageData() ?? slidesStore.getFirstPageData();
-  const currentPageId = currentPage?.id ?? '';
-  const totalPage = slidesStore.getTotalPageIndex();
-  const currentPageIndex = slidesStore.getCurrentPageIndex(currentPageId);
-  const prevPage = slidesStore.getPrevPageData(currentPageId);
-  const nextPage = slidesStore.getNextPageData(currentPageId);
-  const isCurrentPageDirty = slidesStore.isPageDirty(currentPageId);
   const pageIdsForStack = (slidesStore.metadata?.pageIds ?? []).filter(Boolean);
   const groupSlideItems = groupSlides.map((slideItem) => {
     const slideId = `${slideItem?.slideId ?? ''}`.trim();
@@ -192,7 +186,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const requestCreateSlideUnderFolder = async (folderPathRaw = '') => {
     const createResult = await slidesStore.requestCreateSlide('Untitled');
     if (!createResult?.ok) return;
-    const createdSlideId = `${slidesStore.currentSlideId ?? ''}`.trim();
+    const createdSlideId = `${slidesStore.slideCurrentId ?? ''}`.trim();
     if (!createdSlideId) return;
     const nextSlides = [...groupSlides, { slideId: createdSlideId, path: normalizeFolderPath(folderPathRaw) }];
     const result = await slidesGroupStore.requestUpdateGroupSlides(groupId, nextSlides);
@@ -211,7 +205,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
       return;
     }
     await slidesStore.requestSwitchSlide(slideId);
-    if (`${slidesStore.currentSlideId ?? ''}`.trim() !== slideId) {
+    if (`${slidesStore.slideCurrentId ?? ''}`.trim() !== slideId) {
       const nextSelectedSlideId = `${nextSlides[0]?.slideId ?? ''}`.trim();
       setSelectedSlideId(nextSelectedSlideId);
       return;
@@ -341,74 +335,53 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
             </div>
 
             <Header
-              isHidden={false}
-              slideItems={groupSlideItems}
-              currentSlideId={selectedSlideId}
-              currentSlideName={selectedSlideName || ''}
-              isSettingBusy={slidesGroupStore.isSubmitting || slidesStore.isPersisting || !isSelectedSlideInGroup}
-              isPersisting={slidesStore.isPersisting}
-              isSlideDeleting={false}
-              currentPageIndex={currentPageIndex > 0 ? currentPageIndex : 1}
-              totalPage={Math.max(1, totalPage)}
-              isCurrentPageDirty={isCurrentPageDirty}
-              persistFailureMessage={slidesGroupStore.errorText || slidesStore.persistFailureMessage || ''}
-              hasPrevPage={Boolean(prevPage)}
-              hasNextPage={Boolean(nextPage)}
-              hasDeletePage={totalPage > 1 && currentPageIndex > 0}
-              hasMovePrevPage={currentPageIndex > 1}
-              hasMoveNextPage={currentPageIndex > 0 && currentPageIndex < totalPage}
-              onSwitchSlide={(nextSlideId) => setSelectedSlideId(`${nextSlideId ?? ''}`.trim())}
-              onRenameSlide={(nextName) => slidesGroupStore.requestRenameSlide(selectedSlideId, `${nextName ?? ''}`)}
-              onCreateSlide={async () => {
-                const createResult = await slidesStore.requestCreateSlide('Untitled');
-                if (!createResult?.ok) return;
-                const createdSlideId = `${slidesStore.currentSlideId ?? ''}`.trim();
-                if (!createdSlideId) return;
-                const nextSlides = [
-                  ...groupSlides,
-                  { slideId: createdSlideId, path: '' },
-                ];
-                const result = await slidesGroupStore.requestUpdateGroupSlides(groupId, nextSlides);
-                if (result?.ok) setSelectedSlideId(createdSlideId);
+              slidesStore={slidesStore}
+              data={{
+                slideItems: groupSlideItems,
+                slideCurrentId: selectedSlideId,
+                slideCurrentName: selectedSlideName || '',
+                statusMessage: slidesGroupStore.errorText || slidesStore.persistFailureMessage || '',
               }}
-              onDeleteSlide={() => {}}
-              onReinitDatabase={() => {}}
-              onDumpDatabase={() => {}}
-              databaseItems={[]}
-              currentDatabaseKey=""
-              isDatabaseLoading={false}
-              isDatabaseSwitching={false}
-              isDatabaseTesting={false}
-              testingDatabaseKey=""
-              loadFailureMessage=""
-              onRefreshDatabases={() => {}}
-              onSwitchDatabase={() => {}}
-              onTestDatabase={() => {}}
-              onCreatePageBefore={() => slidesStore.requestCreatePageBeforeCurrent()}
-              onCreatePageAfter={() => slidesStore.requestCreatePageAfterCurrent()}
-              onDeletePage={() => slidesStore.requestDeleteCurrentPage()}
-              onGoPrevPage={() => {
-                if (!prevPage) return;
-                slidesStore.setCurrentPage(prevPage.id);
-                slidesStore.clearSelectedContainer();
+              config={{
+                isSettingBusy:
+                  slidesGroupStore.isSubmitting || slidesStore.isPersisting || !isSelectedSlideInGroup,
+                isSlideDeleting: false,
+                isDatabaseSwitcherVisible: false,
+                isSlideSwitcherVisible: false,
+                isDatabaseActionButtonsVisible: false,
+                isSlideActionButtonsVisible: false,
+                isPageArrowButtonsVisible: !isStackMode,
+                isSaveButtonVisible: true,
+                isStackModeToggleVisible: true,
+                isStackMode,
               }}
-              onGoNextPage={() => {
-                if (!nextPage) return;
-                slidesStore.setCurrentPage(nextPage.id);
-                slidesStore.clearSelectedContainer();
+              onEvent={async (event) => {
+                switch (event.type) {
+                  case 'switchSlide':
+                    setSelectedSlideId(`${event.slideId ?? ''}`.trim());
+                    return true;
+                  case 'renameSlide':
+                    await slidesGroupStore.requestRenameSlide(selectedSlideId, `${event.name ?? ''}`);
+                    return true;
+                  case 'createSlide': {
+                    const createResult = await slidesStore.requestCreateSlide('Untitled');
+                    if (!createResult?.ok) return true;
+                    const createdSlideId = `${slidesStore.slideCurrentId ?? ''}`.trim();
+                    if (!createdSlideId) return true;
+                    const nextSlides = [...groupSlides, { slideId: createdSlideId, path: '' }];
+                    const result = await slidesGroupStore.requestUpdateGroupSlides(groupId, nextSlides);
+                    if (result?.ok) setSelectedSlideId(createdSlideId);
+                    return true;
+                  }
+                  case 'deleteSlide':
+                    return true;
+                  case 'toggleStackMode':
+                    setIsStackMode((prevValue) => !prevValue);
+                    return true;
+                  default:
+                    return false;
+                }
               }}
-              onMovePrevPage={() => slidesStore.requestMoveCurrentPageByOffset(-1)}
-              onMoveNextPage={() => slidesStore.requestMoveCurrentPageByOffset(1)}
-              onSaveCurrentPage={() => slidesStore.requestPersistDirtyPages()}
-              isDatabaseSwitcherVisible={false}
-              isSlideSwitcherVisible={false}
-              isDatabaseActionButtonsVisible={false}
-              isSlideActionButtonsVisible={false}
-              isPageArrowButtonsVisible={!isStackMode}
-              isSaveButtonVisible={true}
-              isStackModeToggleVisible={true}
-              isStackMode={isStackMode}
-              onToggleStackMode={() => setIsStackMode((prevValue) => !prevValue)}
             />
 
             <div className="group-view-slide-head-line">

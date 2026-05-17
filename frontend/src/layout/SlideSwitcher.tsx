@@ -7,8 +7,8 @@ const renderIcon = (IconComp: any, width: number, height: number) => {
 
 const SlideSwitcher = ({
   slideItems,
-  currentSlideId,
-  currentSlideName,
+  slideCurrentId,
+  slideCurrentName,
   isSettingBusy,
   onSwitchSlide,
   onRenameSlide,
@@ -36,8 +36,8 @@ const SlideSwitcher = ({
     setSlideSearchText('');
     const element = renameRef.current;
     if (!element) return;
-    element.textContent = currentSlideName ?? '';
-  }, [currentSlideId, currentSlideName]);
+    element.textContent = slideCurrentName ?? '';
+  }, [slideCurrentId, slideCurrentName]);
 
   useEffect(() => {
     if (!isSlideDropdownOpen) return undefined;
@@ -67,7 +67,7 @@ const SlideSwitcher = ({
     const element = renameRef.current;
     if (!element) return;
     const nextName = `${element.textContent ?? ''}`.trim();
-    const safeCurrentName = `${currentSlideName ?? ''}`.trim();
+    const safeCurrentName = `${slideCurrentName ?? ''}`.trim();
     if (!nextName) {
       element.textContent = safeCurrentName;
       setIsRenameEditing(false);
@@ -90,7 +90,7 @@ const SlideSwitcher = ({
         contentEditable={isRenameEditing && !isSettingBusy}
         suppressContentEditableWarning
         onClick={() => {
-          if (isSettingBusy || !currentSlideId) return;
+          if (isSettingBusy || !slideCurrentId) return;
           if (isRenameEditing) return;
           setIsRenameEditing(true);
           requestAnimationFrame(() => {
@@ -119,13 +119,13 @@ const SlideSwitcher = ({
           if (event.key === 'Escape') {
             event.preventDefault();
             if (renameRef.current) {
-              renameRef.current.textContent = currentSlideName ?? '';
+              renameRef.current.textContent = slideCurrentName ?? '';
             }
             setIsRenameEditing(false);
           }
         }}
       >
-        {currentSlideName ?? ''}
+        {slideCurrentName ?? ''}
       </div>
       <button
         className="slide-rename-dropdown-btn"
@@ -172,7 +172,7 @@ const SlideSwitcher = ({
               filteredSlideItems.map((item: any) => (
                 <button
                   key={item.id}
-                  className={`slide-rename-dropdown-item ${item.id === currentSlideId ? 'is-selected' : ''}`}
+                  className={`slide-rename-dropdown-item ${item.id === slideCurrentId ? 'is-selected' : ''}`}
                   type="button"
                   onClick={() => {
                     onSwitchSlide?.(item.id);

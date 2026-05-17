@@ -1,256 +1,370 @@
 import React from 'react';
-import { LeftIcon, RightIcon } from '@wwf971/react-comp-misc/Icon';
+import { observer } from 'mobx-react-lite';
+import { LeftIcon, RightIcon } from '@wwf971/react-comp-misc';
 import SlideSwitcher from './SlideSwitcher';
 import DbSwitcher from '../backend/DbSwitcher';
+
+export type HeaderEvent =
+  | { type: 'switchSlide'; slideId: string }
+  | { type: 'renameSlide'; name: string }
+  | { type: 'createSlide' }
+  | { type: 'deleteSlide' }
+  | { type: 'viewInsideGroup' }
+  | { type: 'toggleStackMode' }
+  | { type: 'saveCurrentPage' };
+
+export type HeaderData = {
+  slideItems?: { id: string; name: string }[];
+  slideCurrentId?: string;
+  slideCurrentName?: string;
+  statusMessage?: string;
+};
+
+export type HeaderConfig = {
+  isHidden?: boolean;
+  isSettingBusy?: boolean;
+  isSlideDeleting?: boolean;
+  isDatabaseSwitcherVisible?: boolean;
+  isSlideSwitcherVisible?: boolean;
+  isSlideActionButtonsVisible?: boolean;
+  isDatabaseActionButtonsVisible?: boolean;
+  isPageActionButtonsVisible?: boolean;
+  isPageArrowButtonsVisible?: boolean;
+  isSaveButtonVisible?: boolean;
+  isStackModeToggleVisible?: boolean;
+  /** When stack toggle is visible, toggles the nav button label. */
+  isStackMode?: boolean;
+  isViewInsideGroupButtonVisible?: boolean;
+};
 
 const renderIcon = (IconComp: any, width: number, height: number) => {
   return React.createElement(IconComp, { width, height });
 };
 
-const Header = ({
-  isHidden,
-  slideItems,
-  currentSlideId,
-  currentSlideName,
-  isSettingBusy,
-  isPersisting,
-  isSlideDeleting,
-  currentPageIndex,
-  totalPage,
-  isCurrentPageDirty,
-  persistFailureMessage,
-  hasPrevPage,
-  hasNextPage,
-  hasDeletePage,
-  hasMovePrevPage,
-  hasMoveNextPage,
-  onSwitchSlide,
-  onRenameSlide,
-  onCreateSlide,
-  onDeleteSlide,
-  onReinitDatabase,
-  onDumpDatabase,
-  databaseItems,
-  currentDatabaseKey,
-  isDatabaseLoading,
-  isDatabaseSwitching,
-  isDatabaseTesting,
-  testingDatabaseKey,
-  loadFailureMessage,
-  onRefreshDatabases,
-  onSwitchDatabase,
-  onTestDatabase,
-  onCreatePageBefore,
-  onCreatePageAfter,
-  onDeletePage,
-  onGoPrevPage,
-  onGoNextPage,
-  onMovePrevPage,
-  onMoveNextPage,
-  onSaveCurrentPage,
-  isDatabaseSwitcherVisible = true,
-  isSlideSwitcherVisible = true,
-  isSlideActionButtonsVisible = true,
-  isDatabaseActionButtonsVisible = true,
-  isPageActionButtonsVisible = true,
-  isPageArrowButtonsVisible = true,
-  isSaveButtonVisible = false,
-  isStackModeToggleVisible = false,
-  isStackMode = false,
-  onToggleStackMode,
-  isViewInsideGroupButtonVisible = false,
-  onViewInsideGroup,
-}: any) => {
-  return (
-    <div className={`slide-system-toolbar ${isHidden ? 'is-hidden' : ''}`}>
-      <div className="slide-toolbar-settings">
-        {isDatabaseSwitcherVisible ? (
-          <DbSwitcher
-            databaseItems={databaseItems}
-            currentDatabaseKey={currentDatabaseKey}
-            isSettingBusy={isSettingBusy}
-            isDatabaseLoading={isDatabaseLoading}
-            isDatabaseSwitching={isDatabaseSwitching}
-            isDatabaseTesting={isDatabaseTesting}
-            testingDatabaseKey={testingDatabaseKey}
-            loadFailureMessage={loadFailureMessage}
-            onRefreshDatabases={onRefreshDatabases}
-            onSwitchDatabase={onSwitchDatabase}
-            onTestDatabase={onTestDatabase}
-          />
-        ) : null}
-        {isSlideSwitcherVisible ? (
-          <SlideSwitcher
-            slideItems={slideItems}
-            currentSlideId={currentSlideId}
-            currentSlideName={currentSlideName}
-            isSettingBusy={isSettingBusy}
-            onSwitchSlide={onSwitchSlide}
-            onRenameSlide={onRenameSlide}
-          />
-        ) : null}
-        {isSlideActionButtonsVisible ? (
-          <>
-            {isViewInsideGroupButtonVisible ? (
+const defaultConfig: Required<
+  Pick<
+    HeaderConfig,
+    | 'isHidden'
+    | 'isDatabaseSwitcherVisible'
+    | 'isSlideSwitcherVisible'
+    | 'isSlideActionButtonsVisible'
+    | 'isDatabaseActionButtonsVisible'
+    | 'isPageActionButtonsVisible'
+    | 'isPageArrowButtonsVisible'
+    | 'isSaveButtonVisible'
+    | 'isStackModeToggleVisible'
+    | 'isStackMode'
+    | 'isViewInsideGroupButtonVisible'
+  >
+> = {
+  isHidden: false,
+  isDatabaseSwitcherVisible: true,
+  isSlideSwitcherVisible: true,
+  isSlideActionButtonsVisible: true,
+  isDatabaseActionButtonsVisible: true,
+  isPageActionButtonsVisible: true,
+  isPageArrowButtonsVisible: true,
+  isSaveButtonVisible: false,
+  isStackModeToggleVisible: false,
+  isStackMode: false,
+  isViewInsideGroupButtonVisible: false,
+};
+
+const Header = observer(
+  ({
+    slidesStore,
+    backendStore = null,
+    data = {},
+    config = {},
+    onEvent,
+  }: {
+    slidesStore: any;
+    backendStore?: any;
+    data?: HeaderData;
+    config?: HeaderConfig;
+    onEvent?: (event: HeaderEvent) => boolean | void | Promise<boolean | void>;
+  }) => {
+    const mergedConfig = { ...defaultConfig, ...config };
+    const isPersisting = slidesStore.isPersisting ?? false;
+    const isSlideDeleting =
+      config.isSlideDeleting !== undefined ? config.isSlideDeleting : slidesStore.isSlideDeleting ?? false;
+    const isSettingBusy =
+      config.isSettingBusy !== undefined
+        ? config.isSettingBusy
+        : Boolean(
+            slidesStore.isSlidesInitializing ||
+              slidesStore.isSlideSwitching ||
+              slidesStore.isSlideDeleting ||
+              slidesStore.isPageDeleting ||
+              isPersisting,
+          );
+
+    const currentPage = slidesStore.getCurrentPageData?.() ?? slidesStore.getFirstPageData?.();
+    const currentPageId = currentPage?.id ?? '';
+    const totalPage = slidesStore.getTotalPageIndex?.() ?? 0;
+    const currentPageIndex = slidesStore.getCurrentPageIndex?.(currentPageId) ?? 0;
+    const isCurrentPageDirty = slidesStore.isPageDirty?.(currentPageId) ?? false;
+    const prevPage = slidesStore.getPrevPageData?.(currentPageId);
+    const nextPage = slidesStore.getNextPageData?.(currentPageId);
+
+    const slideItems = data.slideItems ?? slidesStore.slideItems ?? [];
+    const slideCurrentId = data.slideCurrentId ?? slidesStore.slideCurrentId ?? '';
+    const currentSlide =
+      slideItems.find((item: { id: string }) => `${item?.id ?? ''}` === `${slideCurrentId}`) ?? null;
+    const slideCurrentName =
+      data.slideCurrentName !== undefined ? data.slideCurrentName : (currentSlide?.name ?? '');
+
+    const persistFailureMessage =
+      `${data.statusMessage ?? slidesStore.persistFailureMessage ?? ''}`.trim();
+
+    const runEvent = async (event: HeaderEvent, fallback: () => void | Promise<void>) => {
+      const handled = await onEvent?.(event);
+      if (handled === true) return;
+      await fallback();
+    };
+
+    const handleSwitchDatabase = async (presetKey: string) => {
+      if (!backendStore?.requestSwitchDatabase) return;
+      const result = await backendStore.requestSwitchDatabase(presetKey);
+      if (!result?.ok) return;
+      await slidesStore.requestReloadAfterDatabaseSwitch?.();
+    };
+
+    return (
+      <div className={`slide-system-toolbar ${mergedConfig.isHidden ? 'is-hidden' : ''}`}>
+        <div className="slide-toolbar-settings">
+          {mergedConfig.isDatabaseSwitcherVisible && backendStore ? (
+            <DbSwitcher
+              databaseItems={backendStore.databaseItems ?? []}
+              currentDatabaseKey={backendStore.currentDatabaseKey ?? ''}
+              isSettingBusy={isSettingBusy}
+              isDatabaseLoading={backendStore.isDatabaseLoading ?? false}
+              isDatabaseSwitching={backendStore.isDatabaseSwitching ?? false}
+              isDatabaseTesting={backendStore.isDatabaseTesting ?? false}
+              testingDatabaseKey={backendStore.testingDatabaseKey ?? ''}
+              loadFailureMessage={backendStore.loadFailureMessage ?? ''}
+              onRefreshDatabases={() => {
+                backendStore.requestLoadDatabases?.();
+              }}
+              onSwitchDatabase={handleSwitchDatabase}
+              onTestDatabase={(presetKey: string) => {
+                backendStore.requestTestDatabase?.(presetKey);
+              }}
+            />
+          ) : null}
+          {mergedConfig.isSlideSwitcherVisible ? (
+            <SlideSwitcher
+              slideItems={slideItems}
+              slideCurrentId={slideCurrentId}
+              slideCurrentName={slideCurrentName}
+              isSettingBusy={isSettingBusy}
+              onSwitchSlide={(slideId: string) => {
+                void runEvent({ type: 'switchSlide', slideId }, async () => {
+                  await slidesStore.requestSwitchSlide(slideId);
+                });
+              }}
+              onRenameSlide={(nextName: string) => {
+                void runEvent({ type: 'renameSlide', name: nextName }, async () => {
+                  await slidesStore.requestRenameCurrentSlide(nextName);
+                });
+              }}
+            />
+          ) : null}
+          {mergedConfig.isSlideActionButtonsVisible ? (
+            <>
+              {mergedConfig.isViewInsideGroupButtonVisible ? (
+                <button
+                  className="slide-toolbar-btn"
+                  type="button"
+                  disabled={isSettingBusy || isPersisting || !slideCurrentId}
+                  onClick={() => {
+                    void runEvent({ type: 'viewInsideGroup' }, async () => {});
+                  }}
+                >
+                  View inside Group
+                </button>
+              ) : null}
               <button
                 className="slide-toolbar-btn"
                 type="button"
-                disabled={isSettingBusy || isPersisting || !currentSlideId}
+                disabled={isSettingBusy}
                 onClick={() => {
-                  onViewInsideGroup?.();
+                  void runEvent({ type: 'createSlide' }, async () => {
+                    await slidesStore.requestCreateSlide('Untitled');
+                  });
                 }}
               >
-                View inside Group
+                New
               </button>
-            ) : null}
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy}
-              onClick={() => {
-                onCreateSlide?.();
-              }}
-            >
-              New
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting || isSlideDeleting || !currentSlideId}
-              onClick={() => {
-                onDeleteSlide?.();
-              }}
-            >
-              Delete Slide
-            </button>
-          </>
-        ) : null}
-        {isDatabaseActionButtonsVisible ? (
-          <>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy}
-              onClick={() => {
-                onReinitDatabase?.();
-              }}
-            >
-              Reinit DB
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy}
-              onClick={() => {
-                onDumpDatabase?.();
-              }}
-            >
-              Dump DB
-            </button>
-          </>
-        ) : null}
-      </div>
-      <div className="slide-toolbar-page">
-        <span className="slide-toolbar-page-value">{currentPageIndex}</span>
-        <span className="slide-toolbar-page-value">{isCurrentPageDirty ? '*' : ''}</span>
-        <span className="slide-toolbar-page-sep">/</span>
-        <span className="slide-toolbar-page-value">{totalPage}</span>
-        <span className={`slide-toolbar-saving ${isPersisting ? 'is-visible' : ''}`}>saving</span>
-      </div>
-      <div
-        className={`slide-toolbar-status ${persistFailureMessage ? 'is-visible' : ''}`}
-        title={persistFailureMessage || ''}
-      >
-        {persistFailureMessage}
-      </div>
-      <div className="slide-toolbar-page-nav">
-        {isPageActionButtonsVisible ? (
-          <>
-            {isSaveButtonVisible ? (
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={isSettingBusy || isPersisting || isSlideDeleting || !slideCurrentId}
+                onClick={() => {
+                  void runEvent({ type: 'deleteSlide' }, async () => {
+                    await slidesStore.requestDeleteCurrentSlide();
+                  });
+                }}
+              >
+                Delete Slide
+              </button>
+            </>
+          ) : null}
+          {mergedConfig.isDatabaseActionButtonsVisible ? (
+            <>
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={isSettingBusy}
+                onClick={() => {
+                  slidesStore.requestReinitDatabase?.();
+                }}
+              >
+                Reinit DB
+              </button>
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={isSettingBusy}
+                onClick={() => {
+                  slidesStore.requestDumpDatabaseSnapshot?.();
+                }}
+              >
+                Dump DB
+              </button>
+            </>
+          ) : null}
+        </div>
+        <div className="slide-toolbar-page">
+          <span className="slide-toolbar-page-value">{currentPageIndex}</span>
+          <span className="slide-toolbar-page-value">{isCurrentPageDirty ? '*' : ''}</span>
+          <span className="slide-toolbar-page-sep">/</span>
+          <span className="slide-toolbar-page-value">{totalPage}</span>
+          <span className={`slide-toolbar-saving ${isPersisting ? 'is-visible' : ''}`}>saving</span>
+        </div>
+        <div
+          className={`slide-toolbar-status ${persistFailureMessage ? 'is-visible' : ''}`}
+          title={persistFailureMessage || ''}
+        >
+          {persistFailureMessage}
+        </div>
+        <div className="slide-toolbar-page-nav">
+          {mergedConfig.isPageActionButtonsVisible ? (
+            <>
+              {mergedConfig.isSaveButtonVisible ? (
+                <button
+                  className="slide-toolbar-btn"
+                  type="button"
+                  disabled={isSettingBusy || isPersisting}
+                  onClick={() => {
+                    void runEvent({ type: 'saveCurrentPage' }, async () => {
+                      await slidesStore.requestPersistDirtyPages();
+                    });
+                  }}
+                >
+                  Save
+                </button>
+              ) : null}
               <button
                 className="slide-toolbar-btn"
                 type="button"
                 disabled={isSettingBusy || isPersisting}
-                onClick={() => onSaveCurrentPage?.()}
+                onClick={() => {
+                  slidesStore.requestCreatePageBeforeCurrent?.();
+                }}
               >
-                Save
+                Create Before
               </button>
-            ) : null}
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting}
-              onClick={() => onCreatePageBefore?.()}
-            >
-              Create Before
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting}
-              onClick={() => onCreatePageAfter?.()}
-            >
-              Create After
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting || !hasDeletePage}
-              onClick={() => onDeletePage?.()}
-            >
-              Delete Page
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting || !hasMovePrevPage}
-              onClick={() => onMovePrevPage?.()}
-            >
-              Move Prev
-            </button>
-            <button
-              className="slide-toolbar-btn"
-              type="button"
-              disabled={isSettingBusy || isPersisting || !hasMoveNextPage}
-              onClick={() => onMoveNextPage?.()}
-            >
-              Move Next
-            </button>
-            {isStackModeToggleVisible ? (
               <button
                 className="slide-toolbar-btn"
                 type="button"
                 disabled={isSettingBusy || isPersisting}
-                onClick={() => onToggleStackMode?.()}
+                onClick={() => {
+                  slidesStore.requestCreatePageAfterCurrent?.();
+                }}
               >
-                {isStackMode ? 'Single Slide' : 'Stack Slides'}
+                Create After
               </button>
-            ) : null}
-          </>
-        ) : null}
-        {isPageArrowButtonsVisible ? (
-          <>
-            <button
-              className="slide-toolbar-icon-btn"
-              type="button"
-              disabled={!hasPrevPage}
-              onClick={() => onGoPrevPage?.()}
-            >
-              {renderIcon(LeftIcon, 12, 12)}
-            </button>
-            <button
-              className="slide-toolbar-icon-btn"
-              type="button"
-              disabled={!hasNextPage}
-              onClick={() => onGoNextPage?.()}
-            >
-              {renderIcon(RightIcon, 12, 12)}
-            </button>
-          </>
-        ) : null}
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={isSettingBusy || isPersisting || !(totalPage > 1 && currentPageIndex > 0)}
+                onClick={() => {
+                  slidesStore.requestDeleteCurrentPage?.();
+                }}
+              >
+                Delete Page
+              </button>
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={isSettingBusy || isPersisting || !(currentPageIndex > 1)}
+                onClick={() => {
+                  slidesStore.requestMoveCurrentPageByOffset?.(-1);
+                }}
+              >
+                Move Prev
+              </button>
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={
+                  isSettingBusy ||
+                  isPersisting ||
+                  !(currentPageIndex > 0 && currentPageIndex < totalPage)
+                }
+                onClick={() => {
+                  slidesStore.requestMoveCurrentPageByOffset?.(1);
+                }}
+              >
+                Move Next
+              </button>
+              {mergedConfig.isStackModeToggleVisible ? (
+                <button
+                  className="slide-toolbar-btn"
+                  type="button"
+                  disabled={isSettingBusy || isPersisting}
+                  onClick={() => {
+                    void runEvent({ type: 'toggleStackMode' }, async () => {});
+                  }}
+                >
+                  {mergedConfig.isStackMode ? 'Single Slide' : 'Stack Slides'}
+                </button>
+              ) : null}
+            </>
+          ) : null}
+          {mergedConfig.isPageArrowButtonsVisible ? (
+            <>
+              <button
+                className="slide-toolbar-icon-btn"
+                type="button"
+                disabled={!prevPage}
+                onClick={() => {
+                  if (!prevPage) return;
+                  slidesStore.setCurrentPage(prevPage.id);
+                  slidesStore.clearSelectedContainer?.();
+                }}
+              >
+                {renderIcon(LeftIcon, 12, 12)}
+              </button>
+              <button
+                className="slide-toolbar-icon-btn"
+                type="button"
+                disabled={!nextPage}
+                onClick={() => {
+                  if (!nextPage) return;
+                  slidesStore.setCurrentPage(nextPage.id);
+                  slidesStore.clearSelectedContainer?.();
+                }}
+              >
+                {renderIcon(RightIcon, 12, 12)}
+              </button>
+            </>
+          ) : null}
+        </div>
       </div>
-    </div>
-  );
-};
+    );
+  },
+);
 
 export default Header;

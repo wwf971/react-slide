@@ -1,4 +1,4 @@
-.overview-page-root {
+.slide-overview-root {
   width: 100%;
   height: 100%;
   overflow: auto;
@@ -7,7 +7,7 @@
   justify-content: center;
 }
 
-.overview-page-main {
+.slide-overview-main {
   width: 100%;
   min-width: 700px;
   max-width: 1200px;
@@ -15,7 +15,7 @@
   box-sizing: border-box;
 }
 
-.overview-page-block {
+.slide-overview-block {
   border: 1px solid #d9d9d9;
   background: #ffffff;
   border-radius: 2px;
@@ -23,19 +23,19 @@
   margin-bottom: 8px;
 }
 
-.overview-page-title-line {
+.slide-overview-title-line {
   font-size: 12px;
   font-weight: 600;
   margin-bottom: 6px;
 }
 
-.overview-page-button-line {
+.slide-overview-button-line {
   display: flex;
   gap: 4px;
   margin-bottom: 6px;
 }
 
-.overview-page-btn {
+.slide-overview-btn {
   height: 24px;
   border: 1px solid #c7c7c7;
   border-radius: 2px;
@@ -45,12 +45,12 @@
   padding: 0 8px;
 }
 
-.overview-page-btn:disabled {
+.slide-overview-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.overview-page-error-line {
+.slide-overview-error-line {
   border: 1px solid #d8b3b3;
   background: #fff3f3;
   color: #8d2222;
@@ -59,13 +59,13 @@
   font-size: 12px;
 }
 
-.overview-page-orphan-name-cell {
+.slide-overview-orphan-name-cell {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.overview-page-orphan-missing-mark {
+.slide-overview-orphan-missing-mark {
   color: #c23d3d;
   font-weight: 600;
 }

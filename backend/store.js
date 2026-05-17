@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { createSeedSlideDocument } from './init_data.js';
-import { OBJECT_STORAGE_SERVICE_URL, OBJECT_STORAGE_SPACE_NAME } from './config.js';
+import { OBJECT_STORAGE_CURRENT, normalizeObjectStoragePreset } from './config.js';
 
 const TYPE_CODE = {
   slide: 1,
@@ -1143,17 +1143,22 @@ const dumpDatabaseSnapshot = async (ctx) => {
   };
 };
 
-const createObjectStorageContext = () => {
-  const serviceUrl = `${OBJECT_STORAGE_SERVICE_URL ?? ''}`.trim().replace(/\/+$/, '');
-  const spaceName = `${OBJECT_STORAGE_SPACE_NAME ?? ''}`.trim();
+const createObjectStorageContext = (preset = OBJECT_STORAGE_CURRENT) => {
+  const normalizedPreset = normalizeObjectStoragePreset(preset ?? {});
+  const serviceUrl = normalizedPreset.SERVICE_URL;
+  const spaceName = normalizedPreset.SPACE_NAME;
+  const presetKey = normalizedPreset.KEY;
   return {
     serviceUrl,
     spaceName,
+    presetKey,
     spaceId: '',
     isReady: false,
     resourceMetaCache: {},
     slideGroupMetaObjectId: '',
     info: {
+      presetKey,
+      label: normalizedPreset.LABEL,
       serviceUrl,
       spaceName,
       spaceId: '',
