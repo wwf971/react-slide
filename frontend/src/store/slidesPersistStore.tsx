@@ -5,15 +5,9 @@ const cloneData = (data: any) => {
   return JSON.parse(JSON.stringify(data ?? {}));
 };
 
-const resolveDefaultBackendBaseUrl = () => {
-  if (typeof window !== 'undefined' && window?.location?.origin) {
-    return window.location.origin;
-  }
-  return '';
-};
+import { resolveBackendBaseUrl } from '../../publicPath.js';
 
-const PERSIST_BACKEND_BASE_URL =
-  (import.meta as any)?.env?.VITE_SLIDE_BACKEND_BASE_URL ?? resolveDefaultBackendBaseUrl();
+const PERSIST_BACKEND_BASE_URL = resolveBackendBaseUrl();
 
 const collectDirtyIds = (dirtyMap: any) => {
   return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);

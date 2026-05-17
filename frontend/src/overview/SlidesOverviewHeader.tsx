@@ -29,20 +29,30 @@ const SlidesOverviewHeader = observer(({
   return (
     <div className="slides-overview-header">
       <DbSwitcher
-        databaseItems={backendStore.databaseItems ?? []}
-        currentDatabaseKey={backendStore.currentDatabaseKey ?? ''}
-        isSettingBusy={isSettingBusy}
-        isDatabaseLoading={backendStore.isDatabaseLoading ?? false}
-        isDatabaseSwitching={backendStore.isDatabaseSwitching ?? false}
-        isDatabaseTesting={backendStore.isDatabaseTesting ?? false}
-        testingDatabaseKey={backendStore.testingDatabaseKey ?? ''}
-        loadFailureMessage={backendStore.loadFailureMessage ?? ''}
-        onRefreshDatabases={() => {
-          backendStore.requestLoadDatabases?.();
+        data={{
+          items: backendStore.databaseItems ?? [],
+          currentId: backendStore.currentDatabaseKey ?? '',
+          loadFailureMessage: backendStore.loadFailureMessage ?? '',
         }}
-        onSwitchDatabase={handleSwitchDatabase}
-        onTestDatabase={(presetKey: string) => {
-          backendStore.requestTestDatabase?.(presetKey);
+        config={{
+          isSettingBusy,
+          isLoading: backendStore.isDatabaseLoading ?? false,
+          isSwitching: backendStore.isDatabaseSwitching ?? false,
+          isTesting: backendStore.isDatabaseTesting ?? false,
+          testingId: backendStore.testingDatabaseKey ?? '',
+        }}
+        onEvent={(eventType, eventData) => {
+          if (eventType === 'refresh') {
+            backendStore.requestLoadDatabases?.();
+            return;
+          }
+          if (eventType === 'switch') {
+            void handleSwitchDatabase(`${eventData?.id ?? ''}`);
+            return;
+          }
+          if (eventType === 'test') {
+            backendStore.requestTestDatabase?.(`${eventData?.id ?? ''}`);
+          }
         }}
       />
     </div>

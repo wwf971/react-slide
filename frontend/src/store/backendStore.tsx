@@ -1,14 +1,8 @@
 import { makeAutoObservable, runInAction } from 'mobx';
 
-const resolveDefaultBackendBaseUrl = () => {
-  if (typeof window !== 'undefined' && window?.location?.origin) {
-    return window.location.origin;
-  }
-  return '';
-};
+import { resolveBackendBaseUrl } from '../../publicPath.js';
 
-const BACKEND_BASE_URL =
-  (import.meta as any)?.env?.VITE_SLIDE_BACKEND_BASE_URL ?? resolveDefaultBackendBaseUrl();
+const BACKEND_BASE_URL = resolveBackendBaseUrl();
 
 class BackendStore {
   databaseItems: any[] = [];

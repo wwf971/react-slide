@@ -3,9 +3,10 @@ import { observer } from 'mobx-react-lite';
 import { FolderView, Menu, PanelPopup } from '@wwf971/react-comp-misc';
 import { useNavigate } from 'react-router-dom';
 import SlidesOverviewHeader from './SlidesOverviewHeader';
-import './SlideOverview.css';
+import SlidesOverviewNameCell from './SlidesOverviewNameCell';
+import './SlidesOverview.css';
 
-const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
+const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
   const navigate = useNavigate();
   const [isCreatePopupVisible, setIsCreatePopupVisible] = useState(false);
   const [isDeletePopupVisible, setIsDeletePopupVisible] = useState(false);
@@ -49,16 +50,29 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
   }, [slidesGroupStore.groupItems]);
 
   const selectedGroupId = `${slidesGroupStore.selectedOverviewGroupId ?? ''}`.trim();
+  const isNameEditable = !slidesGroupStore.isOverviewLoading && !slidesGroupStore.isSubmitting;
+
+  const renderNameCell = ({ data, rowId, isMissing = false, onRename }) => {
+    return (
+      <SlidesOverviewNameCell
+        name={`${data ?? ''}`}
+        rowId={`${rowId ?? ''}`.trim()}
+        isEditable={isNameEditable}
+        isMissing={isMissing}
+        onRename={onRename}
+      />
+    );
+  };
 
   return (
-    <div className="slide-overview-root">
-      <div className="slide-overview-main">
+    <div className="slides-overview-root">
+      <div className="slides-overview-main">
         <SlidesOverviewHeader
           slidesGroupStore={slidesGroupStore}
           backendStore={backendStore}
         />
-        <div className="slide-overview-block">
-          <div className="slide-overview-title-line">Orphan Slides</div>
+        <div className="slides-overview-block">
+          <div className="slides-overview-title-line">Orphan Slides</div>
           <FolderView
             columns={{
               name: { data: 'name', align: 'left' },
@@ -78,15 +92,20 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             getBodyComponent={(columnId) => {
               if (columnId !== 'name') return null;
               return ({ data, rowId }) => {
-                const isMissing = orphanMissingSlideIdMap[`${rowId ?? ''}`.trim()] === true;
-                return (
-                  <div className="slide-overview-orphan-name-cell">
-                    <span>{`${data ?? ''}`}</span>
-                    {isMissing ? (
-                      <span className="slide-overview-orphan-missing-mark" title="slide not found">!</span>
-                    ) : null}
-                  </div>
-                );
+                const slideId = `${rowId ?? ''}`.trim();
+                const isMissing = orphanMissingSlideIdMap[slideId] === true;
+                return renderNameCell({
+                  data,
+                  rowId: slideId,
+                  isMissing,
+                  onRename: async (nextName) => {
+                    const result = await slidesGroupStore.requestRenameSlide(slideId, nextName);
+                    return {
+                      ok: result?.ok,
+                      message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
+                    };
+                  },
+                });
               };
             }}
             onRowContextMenu={(event, rowId) => {
@@ -107,11 +126,11 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
           />
         </div>
 
-        <div className="slide-overview-block">
-          <div className="slide-overview-title-line">Slide Groups</div>
-          <div className="slide-overview-button-line">
+        <div className="slides-overview-block">
+          <div className="slides-overview-title-line">Slide Groups</div>
+          <div className="slides-overview-button-line">
             <button
-              className="slide-overview-btn"
+              className="slides-overview-btn"
               type="button"
               disabled={slidesGroupStore.isSubmitting}
               onClick={() => {
@@ -121,7 +140,7 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
               Create Group
             </button>
             <button
-              className="slide-overview-btn"
+              className="slides-overview-btn"
               type="button"
               disabled={!selectedGroupId || slidesGroupStore.isSubmitting}
               onClick={() => {
@@ -131,7 +150,7 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
               Delete Group
             </button>
             <button
-              className="slide-overview-btn"
+              className="slides-overview-btn"
               type="button"
               disabled={slidesGroupStore.isOverviewLoading}
               onClick={() => {
@@ -163,6 +182,23 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             bodyHeight={220}
             loading={slidesGroupStore.isOverviewLoading}
             loadingMessage="loading slide groups"
+            getBodyComponent={(columnId) => {
+              if (columnId !== 'name') return null;
+              return ({ data, rowId }) => {
+                const groupId = `${rowId ?? ''}`.trim();
+                return renderNameCell({
+                  data,
+                  rowId: groupId,
+                  onRename: async (nextName) => {
+                    const result = await slidesGroupStore.requestRenameGroup(groupId, nextName);
+                    return {
+                      ok: result?.ok,
+                      message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
+                    };
+                  },
+                });
+              };
+            }}
             onRowDoubleClick={(groupId) => {
               if (!groupId) return;
               navigate(`/group/${groupId}`);
@@ -171,7 +207,7 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
         </div>
 
         {slidesGroupStore.errorText ? (
-          <div className="slide-overview-error-line">{slidesGroupStore.errorText}</div>
+          <div className="slides-overview-error-line">{slidesGroupStore.errorText}</div>
         ) : null}
       </div>
 
@@ -241,4 +277,4 @@ const SlideOverview = observer(({ slidesGroupStore, backendStore = null }) => {
   );
 });
 
-export default SlideOverview;
+export default SlidesOverview;

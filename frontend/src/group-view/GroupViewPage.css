@@ -52,12 +52,14 @@
 .group-view-left {
   width: 320px;
   min-width: 240px;
+  max-width: 320px;
   border-right: 1px solid #d9d9d9;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 6px;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .group-view-right {
@@ -83,17 +85,38 @@
 .group-view-tree-wrap {
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid #dcdcdc;
   border-radius: 2px;
   padding: 2px;
   background: #ffffff;
+  box-sizing: border-box;
 }
 
 .group-view-left .tree-view {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  width: 100%;
   border: none;
   border-radius: 0;
   background: transparent;
+  overflow: auto;
+  box-sizing: border-box;
+}
+
+.group-view-left .tree-view-node-block,
+.group-view-left .tree-view-node-content {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.group-view-left .tree-view-row {
+  min-width: 0;
 }
 
 .group-view-left .tree-view-row.selected {

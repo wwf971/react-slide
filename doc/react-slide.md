@@ -55,3 +55,7 @@ For how to implement/things you need to be careful about when implementing a cus
 ## Development
 
 See `/doc/dev.md`
+
+## Deployment
+
+See `/doc/deploy.md`

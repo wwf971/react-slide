@@ -100,79 +100,8 @@
   gap: 4px;
 }
 
-.db-switch-card {
-  border: 1px solid #c3d8f1;
-  border-radius: 2px;
-  background: #f8fbff;
-  padding: 4px;
-}
-
-.db-switch-card.is-selected {
-  background: #c8dcf4;
-  border-color: #5f88ba;
-}
-
-.db-switch-card.is-error {
-  border-color: #e0b3b3;
-}
-
-.db-switch-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.db-switch-card-title-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.db-switch-card-title {
-  font-size: 12px;
-  font-weight: 700;
-  font-family: sans-serif;
-  color: #1f3f66;
-}
-
-.db-switch-card-current {
-  font-size: 10px;
-  line-height: 14px;
-  border: 1px solid #729ac8;
-  border-radius: 2px;
-  color: #2d5f9b;
-  padding: 0 4px;
-  font-family: sans-serif;
-}
-
-.db-switch-card-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.db-switch-card-action-btn {
-  height: 22px;
-  border: 1px solid #8fb2dc;
-  border-radius: 2px;
-  background: #ffffff;
-  color: #2d5f9b;
-  font-size: 11px;
-  font-weight: 600;
-  font-family: sans-serif;
-  padding: 0 6px;
-}
-
-.db-switch-card-kv-wrap {
-  margin-top: 2px;
-}
-
-.db-switch-card-error {
-  margin-top: 2px;
-  font-size: 11px;
-  font-family: sans-serif;
-  color: #c22b2b;
+.db-switch-card-wrap {
+  width: 100%;
 }
 
 .db-switch-empty {

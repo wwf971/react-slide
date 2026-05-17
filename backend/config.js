@@ -8,7 +8,7 @@ const OBJECT_STORAGE_LOCAL = {
 const CONFIG_DEFAULT = {
   OBJECT_STORAGE_LIST: [OBJECT_STORAGE_LOCAL],
   OBJECT_STORAGE_INDEX: 0,
-  BACKEND_PORT: 12600,
+  BACKEND_PORT: 9300,
 };
 
 const normalizeObjectStoragePreset = (entry, fallbackKey = '') => {

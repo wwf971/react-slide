@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import Slides from './slide/Slides';
-import SlideOverview from './overview/SlideOverview';
+import SlidesOverview from './overview/SlidesOverview';
 import GroupViewPage from './group-view/GroupViewPage';
 import CompMetadata from './comp_custom/CompMetadata';
 import CompTextSingleline from './comp_custom/CompTextSingleline';
@@ -15,7 +15,10 @@ import CompUrl from './comp_custom/CompUrl';
 import { createDemoSlideStore } from './store/slidesStore';
 import { createBackendStore } from './store/backendStore';
 import { createSlidesGroupStore } from './store/slidesGroupStore';
+import { getRouterBasename } from '../publicPath.js';
 import './App.css';
+
+const routerBasename = getRouterBasename();
 
 const resolveComp = (compName) => {
   if (compName === 'CompTextSingleline') return CompTextSingleline;
@@ -66,12 +69,12 @@ function App() {
 
   return (
     <div className="note-app-root">
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename || undefined}>
         <Routes>
           <Route
             path="/overview"
             element={(
-              <SlideOverview
+              <SlidesOverview
                 slidesGroupStore={slidesGroupStore}
                 backendStore={backendStore}
               />
