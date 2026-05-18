@@ -245,6 +245,18 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       const loadResult = await store.requestGetResourceText(nextResourceId);
       if (isCancelled) return;
       if (!loadResult?.ok) {
+        if (!isReadOnly) {
+          const recreateResult = await store.requestCreateTextResource();
+          if (!isCancelled && recreateResult?.ok && recreateResult.resourceId) {
+            store.requestContainerCompDataUpdate(containerId, {
+              sceneResourceId: recreateResult.resourceId,
+              sceneVersion: 1,
+            });
+            applyParsed('');
+            setErrorText('');
+            return;
+          }
+        }
         applyParsed('');
         setErrorText('Failed to load scene resource');
         return;

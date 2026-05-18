@@ -136,6 +136,8 @@ class SlidesStore {
   isSlideSwitching = false;
   isSlideDeleting = false;
   isPageDeleting = false;
+  isSlideInitAttempted = false;
+  isSlideInitFailed = false;
   persistFailureMessage = '';
   temporarySwitcherByPageId: any = {};
   temporaryOverflowVisibleContainerIdMap: any = {};
@@ -311,16 +313,26 @@ class SlidesStore {
     return true;
   }
 
-  async requestInitializeSlides() {
+  async requestInitializeSlides(isForceRefresh = false) {
     if (this.isSlidesInitializing) return;
     if (!this.slidesPersistStore) return;
+    if (!isForceRefresh && this.isSlideInitAttempted && this.isSlideInitFailed) {
+      return;
+    }
     runInAction(() => {
       this.isSlidesInitializing = true;
+      this.isSlideInitAttempted = true;
+      if (isForceRefresh) {
+        this.isSlideInitFailed = false;
+      }
     });
     try {
-      const result = await this.slidesPersistStore.listSlides();
+      const result = await this.slidesPersistStore.listSlides({
+        isForceRefresh: isForceRefresh === true,
+      });
       if (!result?.ok || !Array.isArray(result.slides) || result.slides.length === 0) {
         runInAction(() => {
+          this.isSlideInitFailed = true;
           this.persistFailureMessage = result?.message ?? 'Failed to initialize slides';
         });
         return;
@@ -334,11 +346,13 @@ class SlidesStore {
       const loadResult = await this.slidesPersistStore.getSlideData(this.slideCurrentId);
       if (!loadResult?.ok || !loadResult.data) {
         runInAction(() => {
+          this.isSlideInitFailed = true;
           this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide data';
         });
         return;
       }
       runInAction(() => {
+        this.isSlideInitFailed = false;
         this.replaceRuntimeData(loadResult.data);
         this.cacheCurrentSlideState();
         this.persistFailureMessage = '';
@@ -359,10 +373,12 @@ class SlidesStore {
       this.slideRuntimeBySlideId = {};
       this.dirtyPageStateBySlideId = {};
       this.dirtyPageStateById = {};
+      this.isSlideInitAttempted = false;
+      this.isSlideInitFailed = false;
       this.persistFailureMessage = '';
     });
     this.slidesPersistStore.clearLocalSnapshotCache?.();
-    await this.requestInitializeSlides();
+    await this.requestInitializeSlides(true);
     return { ok: true };
   }
 

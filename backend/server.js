@@ -8,7 +8,10 @@ import {
   OBJECT_STORAGE_LIST,
   OBJECT_STORAGE_INDEX,
   findObjectStoragePresetByKey,
+  AUTH_USERNAME,
+  AUTH_PASSWORD,
 } from './config.js';
+import { createSlideAuth } from './auth.js';
 import {
   createObjectStorageContext,
   ensureBackendStoreReady,
@@ -74,6 +77,13 @@ const getGroupIdFromFrontendPath = (pathValue = '') => {
   return `${match[1] ?? ''}`.trim();
 };
 
+const getSlideIdFromFrontendPath = (pathValue = '') => {
+  const pathText = `${pathValue ?? ''}`.trim();
+  const match = pathText.match(/^\/slide\/([^/]+)\/?$/);
+  if (!match) return '';
+  return `${match[1] ?? ''}`.trim();
+};
+
 const getTimestampToken = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -91,6 +101,10 @@ const createSlideBackendApp = async () => {
     OBJECT_STORAGE_LIST[currentObjectStorageIndex] ?? OBJECT_STORAGE_LIST[0],
   );
   let startupErrorText = '';
+  const slideAuth = createSlideAuth({
+    username: AUTH_USERNAME,
+    password: AUTH_PASSWORD,
+  });
 
   const getCurrentPreset = () => {
     return OBJECT_STORAGE_LIST[currentObjectStorageIndex] ?? OBJECT_STORAGE_LIST[0] ?? null;
@@ -139,6 +153,8 @@ const createSlideBackendApp = async () => {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: '2mb' }));
+  slideAuth.registerAuthRoutes(app);
+  app.use('/api/slide', slideAuth.requireAuth);
 
   app.get('/api/slide/health', async (_req, res) => {
     try {
@@ -529,7 +545,7 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.put('/api/slide/resources/:resourceId/bytes', async (req, res) => {
+  app.post('/api/slide/resources/:resourceId/bytes', async (req, res) => {
     try {
       const result = await updateResourceBytes(storeContext, req.params.resourceId, req.body?.base64 ?? '');
       if (!result.ok) {
@@ -561,7 +577,7 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.put('/api/slide/resources/:resourceId/text', async (req, res) => {
+  app.post('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
       const result = await updateResourceText(storeContext, req.params.resourceId, req.body?.text ?? '');
       if (!result.ok) {
@@ -659,7 +675,30 @@ const createSlideBackendApp = async () => {
     sendFrontendIndexHtml(res);
   });
   app.get('/slide/:slideId', (_req, res) => {
-    sendFrontendIndexHtml(res);
+    const slideId = `${_req.params?.slideId ?? ''}`.trim();
+    if (!slideId) {
+      res.status(404).json({
+        ok: false,
+        message: 'slide not found',
+      });
+      return;
+    }
+    listSlides(storeContext).then((slides) => {
+      const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
+      if (!isSlideFound) {
+        res.status(404).json({
+          ok: false,
+          message: `slide not found: ${slideId}`,
+        });
+        return;
+      }
+      sendFrontendIndexHtml(res);
+    }).catch((error) => {
+      res.status(500).json({
+        ok: false,
+        message: error instanceof Error ? error.message : 'failed to validate slide route',
+      });
+    });
   });
   app.get('/group/:groupId', async (req, res) => {
     const groupId = `${req.params.groupId ?? ''}`.trim();
@@ -704,6 +743,7 @@ const createSlideBackendApp = async () => {
     }
     if (getIsFrontendRoutePath(req.path)) {
       const groupId = getGroupIdFromFrontendPath(req.path);
+      const slideId = getSlideIdFromFrontendPath(req.path);
       if (groupId) {
         try {
           const groups = await listSlideGroups(storeContext);
@@ -719,6 +759,25 @@ const createSlideBackendApp = async () => {
           res.status(500).json({
             ok: false,
             message: error instanceof Error ? error.message : 'failed to validate slide-group route',
+          });
+          return;
+        }
+      }
+      if (slideId) {
+        try {
+          const slides = await listSlides(storeContext);
+          const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
+          if (!isSlideFound) {
+            res.status(404).json({
+              ok: false,
+              message: `slide not found: ${slideId}`,
+            });
+            return;
+          }
+        } catch (error) {
+          res.status(500).json({
+            ok: false,
+            message: error instanceof Error ? error.message : 'failed to validate slide route',
           });
           return;
         }

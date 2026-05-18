@@ -27,9 +27,8 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const requestedSlideIdFromQuery = `${searchParams.get('selectedSlide') ?? ''}`.trim();
 
   useEffect(() => {
-    if ((slidesStore.slideItems ?? []).length > 0) return;
     slidesStore.requestInitializeSlides();
-  }, [slidesStore, slidesStore.slideItems?.length]);
+  }, [slidesStore]);
 
   useEffect(() => {
     if (!groupId) return;
@@ -172,6 +171,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
     : (!isSelectedSlideKnown
       ? `Slide does not exist or cannot be found: ${selectedSlideId}`
       : `${slidesStore.persistFailureMessage ?? ''}`.trim() || `Failed to load slide: ${selectedSlideId}`);
+  const isSlideInitFailed = slidesStore.isSlideInitFailed === true;
 
   const currentPage = slidesStore.getCurrentPageData() ?? slidesStore.getFirstPageData();
   const pageIdsForStack = (slidesStore.metadata?.pageIds ?? []).filter(Boolean);
@@ -392,6 +392,24 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
             </div>
 
             <div className="group-view-slide-body">
+              {isSlideInitFailed ? (
+                <div className="group-view-missing-slide-panel">
+                  <div className="group-view-missing-slide-title">Slides init failed</div>
+                  <div className="group-view-missing-slide-message">
+                    {`${slidesStore.persistFailureMessage ?? ''}`.trim() || 'Failed to initialize slides'}
+                  </div>
+                  <button
+                    className="group-view-missing-slide-btn"
+                    type="button"
+                    disabled={slidesStore.isSlidesInitializing}
+                    onClick={() => {
+                      slidesStore.requestInitializeSlides(true);
+                    }}
+                  >
+                    Refresh Slides
+                  </button>
+                </div>
+              ) : null}
               {!isSelectedSlideInGroup ? (
                 <div className="group-view-empty">No slide in current group</div>
               ) : isSelectedSlideUnavailable ? (

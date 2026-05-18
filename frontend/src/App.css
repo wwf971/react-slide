@@ -4,3 +4,15 @@
   overflow: hidden;
   background: #fff;
 }
+
+.note-app-login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f7f7f7;
+}
+
+.note-app-login-loading {
+  font-size: 14px;
+  color: #555;
+}

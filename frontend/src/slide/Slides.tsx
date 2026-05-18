@@ -15,20 +15,20 @@ const Slides = observer(({
 }: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
-  const isPersisting = store.isPersisting;
   const isSlidesInitializing = store.isSlidesInitializing;
-  const isSlideSwitching = store.isSlideSwitching;
-  const isSlideDeleting = store.isSlideDeleting;
-  const isPageDeleting = store.isPageDeleting;
   const slideItems = store.slideItems ?? [];
   const slideCurrentId = store.slideCurrentId ?? '';
   const [isFullWindow, setIsFullWindow] = useState(false);
   const [ownerGroupIdBySlideId, setOwnerGroupIdBySlideId] = useState({});
+  const requestedSlideIdNormalized = `${requestedSlideId ?? ''}`.trim();
+  const isRequestedSlideIdMissing = Boolean(requestedSlideIdNormalized)
+    && !isSlidesInitializing
+    && (slideItems ?? []).length > 0
+    && !(slideItems ?? []).some((item: any) => `${item?.id ?? ''}`.trim() === requestedSlideIdNormalized);
 
   useEffect(() => {
-    if ((store.slideItems ?? []).length > 0) return;
     store.requestInitializeSlides();
-  }, [store, store.slideItems?.length]);
+  }, [store]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -51,7 +51,7 @@ const Slides = observer(({
   }, [backendStore]);
 
   useEffect(() => {
-    const nextSlideId = `${requestedSlideId ?? ''}`.trim();
+    const nextSlideId = requestedSlideIdNormalized;
     if (!nextSlideId) return;
     const hasRequestedSlide = (slideItems ?? []).some((item: any) => {
       return `${item?.id ?? ''}`.trim() === nextSlideId;
@@ -62,33 +62,13 @@ const Slides = observer(({
   }, [requestedSlideId, slideItems, store]);
 
   useEffect(() => {
-    const nextSlideId = `${requestedSlideId ?? ''}`.trim();
-    if (!nextSlideId) return;
-    if (isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPageDeleting || isPersisting) return;
-    const hasRequestedSlide = (slideItems ?? []).some((item: any) => {
-      return `${item?.id ?? ''}`.trim() === nextSlideId;
-    });
-    if (hasRequestedSlide) return;
-    store.requestInitializeSlides();
-  }, [
-    requestedSlideId,
-    slideItems,
-    isSlidesInitializing,
-    isSlideSwitching,
-    isSlideDeleting,
-    isPageDeleting,
-    isPersisting,
-    store,
-  ]);
-
-  useEffect(() => {
     if (!onCurrentSlideIdChange) return;
     const nextSlideId = `${slideCurrentId ?? ''}`.trim();
     if (!nextSlideId) return;
     const requestedId = `${requestedSlideId ?? ''}`.trim();
-    if (requestedId && requestedId !== nextSlideId) return;
+    if (requestedId && requestedId !== nextSlideId && !isRequestedSlideIdMissing) return;
     onCurrentSlideIdChange(nextSlideId);
-  }, [slideCurrentId, onCurrentSlideIdChange, requestedSlideId]);
+  }, [slideCurrentId, onCurrentSlideIdChange, requestedSlideId, isRequestedSlideIdMissing]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -155,7 +135,21 @@ const Slides = observer(({
           }}
         />
         <div className="slide-system-canvas-wrap">
-          {currentPage ? (
+          {isRequestedSlideIdMissing ? (
+            <div className="slide-system-empty">
+              Slide not found: {requestedSlideIdNormalized}
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={store.isSlidesInitializing}
+                onClick={() => {
+                  store.requestInitializeSlides(true);
+                }}
+              >
+                Refresh Slides
+              </button>
+            </div>
+          ) : currentPage ? (
             <Page
               {...({
                 pageId: currentPage.id,
@@ -188,7 +182,19 @@ const Slides = observer(({
               } as any)}
             />
           ) : (
-            <div className="slide-system-empty">No page data</div>
+            <div className="slide-system-empty">
+              No page data
+              <button
+                className="slide-toolbar-btn"
+                type="button"
+                disabled={store.isSlidesInitializing}
+                onClick={() => {
+                  store.requestInitializeSlides(true);
+                }}
+              >
+                Refresh Slides
+              </button>
+            </div>
           )}
         </div>
       </div>

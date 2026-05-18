@@ -1,4 +1,5 @@
 import { makeAutoObservable, runInAction } from 'mobx';
+import { requestJsonWithAuth } from '../auth/requestAuth';
 
 import { resolveBackendBaseUrl } from '../../publicPath.js';
 
@@ -18,21 +19,12 @@ class BackendStore {
   }
 
   async requestJson(url: string, options: any = {}) {
-    try {
-      const response = await fetch(url, options);
-      const payload = await response.json().catch(() => ({}));
-      return {
-        isOk: response.ok,
-        status: response.status,
-        payload,
-      };
-    } catch (_error) {
-      return {
-        isOk: false,
-        status: 0,
-        payload: {},
-      };
-    }
+    const result = await requestJsonWithAuth(url, options);
+    return {
+      isOk: result.isOk,
+      status: result.status,
+      payload: result.body ?? {},
+    };
   }
 
   normalizeDatabaseItems(rawItems: any[] = [], currentKey = '') {

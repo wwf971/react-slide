@@ -1,5 +1,6 @@
 import { makeAutoObservable } from 'mobx';
 import { createDemoPersistData } from './slidesPersistStoreUtils';
+import { requestJsonWithAuth } from '../auth/requestAuth';
 
 const cloneData = (data: any) => {
   return JSON.parse(JSON.stringify(data ?? {}));
@@ -8,6 +9,8 @@ const cloneData = (data: any) => {
 import { resolveBackendBaseUrl } from '../../publicPath.js';
 
 const PERSIST_BACKEND_BASE_URL = resolveBackendBaseUrl();
+const LIST_SLIDES_CACHE_TTL_MS = 1200;
+const LIST_SLIDES_FAILURE_BACKOFF_MS = 1200;
 
 const collectDirtyIds = (dirtyMap: any) => {
   return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);
@@ -60,6 +63,9 @@ class SlidesPersistStore {
   slideItems: any[] = [];
 
   resourceBytesById: any = {};
+  listSlidesPendingPromise: Promise<any> | null = null;
+  listSlidesLoadedAt = 0;
+  listSlidesFailedAt = 0;
 
   constructor(initialData: any) {
     this.persistedDataBySlideId['local-demo'] = normalizeSlideSnapshot(initialData);
@@ -85,49 +91,70 @@ class SlidesPersistStore {
   }
 
   async requestJson(url: string, options: any = {}) {
-    try {
-      const response = await fetch(url, options);
-      const payload = await response.json().catch(() => ({}));
-      return {
-        isOk: response.ok,
-        status: response.status,
-        payload,
-      };
-    } catch (_error) {
-      return {
-        isOk: false,
-        status: 0,
-        payload: {},
-      };
-    }
+    const result = await requestJsonWithAuth(url, options);
+    return {
+      isOk: result.isOk,
+      status: result.status,
+      payload: result.body ?? {},
+    };
   }
 
-  async listSlides() {
-    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
-    if (!result.isOk) {
-      const backendMessage = `${result.payload?.message ?? ''}`.trim();
+  async listSlides(options: any = {}) {
+    const isForceRefresh = options?.isForceRefresh === true;
+    const now = Date.now();
+    const isCacheFresh = now - this.listSlidesLoadedAt < LIST_SLIDES_CACHE_TTL_MS;
+    if (!isForceRefresh && this.slideItems.length > 0 && isCacheFresh) {
+      return { ok: true, slides: this.slideItems };
+    }
+    const isRecentFailure = now - this.listSlidesFailedAt < LIST_SLIDES_FAILURE_BACKOFF_MS;
+    if (!isForceRefresh && isRecentFailure) {
       return {
         ok: false,
         slides: this.slideItems,
-        message: backendMessage
-          ? `${backendMessage}. Local Demo is displayed.`
-          : 'Slide list could not be loaded. Local Demo is displayed.',
+        message: 'Slide list could not be loaded. Please retry shortly.',
       };
     }
-    const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
-    this.slideItems = slides.map((slide: any) => ({
-      id: `${slide.id ?? ''}`,
-      name: `${slide.name ?? ''}`,
-    }));
-    const activeSlideIdMap = {};
-    this.slideItems.forEach((slide) => {
-      activeSlideIdMap[slide.id] = true;
-    });
-    Object.keys(this.persistedDataBySlideId).forEach((slideId) => {
-      if (activeSlideIdMap[slideId]) return;
-      delete this.persistedDataBySlideId[slideId];
-    });
-    return { ok: true, slides: this.slideItems };
+    if (!isForceRefresh && this.listSlidesPendingPromise) {
+      return this.listSlidesPendingPromise;
+    }
+    const listSlidesPromise = (async () => {
+      const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
+      if (!result.isOk) {
+        this.listSlidesFailedAt = Date.now();
+        const backendMessage = `${result.payload?.message ?? ''}`.trim();
+        return {
+          ok: false,
+          slides: this.slideItems,
+          message: backendMessage
+            ? `${backendMessage}. Local Demo is displayed.`
+            : 'Slide list could not be loaded. Local Demo is displayed.',
+        };
+      }
+      const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
+      this.slideItems = slides.map((slide: any) => ({
+        id: `${slide.id ?? ''}`,
+        name: `${slide.name ?? ''}`,
+      }));
+      const activeSlideIdMap = {};
+      this.slideItems.forEach((slide) => {
+        activeSlideIdMap[slide.id] = true;
+      });
+      Object.keys(this.persistedDataBySlideId).forEach((slideId) => {
+        if (activeSlideIdMap[slideId]) return;
+        delete this.persistedDataBySlideId[slideId];
+      });
+      this.listSlidesLoadedAt = Date.now();
+      this.listSlidesFailedAt = 0;
+      return { ok: true, slides: this.slideItems };
+    })();
+    this.listSlidesPendingPromise = listSlidesPromise;
+    try {
+      return await listSlidesPromise;
+    } finally {
+      if (this.listSlidesPendingPromise === listSlidesPromise) {
+        this.listSlidesPendingPromise = null;
+      }
+    }
   }
 
   async getSlideData(slideId: string) {
@@ -232,7 +259,7 @@ class SlidesPersistStore {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes`,
       {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -266,7 +293,7 @@ class SlidesPersistStore {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text`,
       {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -438,46 +465,44 @@ class SlidesPersistStore {
     }
 
     try {
-      const response = await fetch(
+      const result = await requestJsonWithAuth(
         `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/save-dirty`,
         {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            metadata: runtimeData?.metadata ?? {},
+            pageDataById: runtimeData?.pageDataById ?? {},
+            containerDataById: sanitizeContainerDataMapForPersist(
+              runtimeData?.containerDataById ?? {},
+            ),
+            compDataById: runtimeData?.compDataById ?? {},
+            dirtyPageStateById: dirtyPageStateById ?? {},
+          }),
         },
-        body: JSON.stringify({
-          metadata: runtimeData?.metadata ?? {},
-          pageDataById: runtimeData?.pageDataById ?? {},
-          containerDataById: sanitizeContainerDataMapForPersist(
-            runtimeData?.containerDataById ?? {},
-          ),
-          compDataById: runtimeData?.compDataById ?? {},
-          dirtyPageStateById: dirtyPageStateById ?? {},
-        }),
-      },
       );
 
-      if (!response.ok) {
+      if (!result.isOk) {
         return {
           ok: false,
           savedPageIds: [],
-          message: `Save failed: backend status ${response.status}`,
+          message: `Save failed: backend status ${result.status}`,
         };
       }
-
-      const result = await response.json();
-      if (!result?.ok) {
+      if (!result.body?.ok) {
         return {
           ok: false,
           savedPageIds: [],
-          message: result?.message ?? 'Save failed: backend returned error',
+          message: result.body?.message ?? 'Save failed: backend returned error',
         };
       }
 
       this.applyDirtyPagesToMemory(slideId, runtimeData, dirtyPageStateById, dirtyPageIds);
       return {
         ok: true,
-        savedPageIds: result?.savedPageIds ?? dirtyPageIds,
+        savedPageIds: result.body?.savedPageIds ?? dirtyPageIds,
       };
     } catch (_error) {
       return {
