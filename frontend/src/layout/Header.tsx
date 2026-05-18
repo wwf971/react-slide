@@ -125,8 +125,8 @@ const Header = observer(
 
     const handleSwitchDatabase = async (presetKey: string) => {
       if (!backendStore?.requestSwitchDatabase) return;
-      const result = await backendStore.requestSwitchDatabase(presetKey);
-      if (!result?.ok) return;
+      await backendStore.requestSwitchDatabase(presetKey);
+      await backendStore.requestLoadDatabases?.();
       await slidesStore.requestReloadAfterDatabaseSwitch?.();
     };
 

@@ -59,3 +59,7 @@ See `/doc/dev.md`
 ## Deployment
 
 See `/doc/deploy.md`
+
+## Other Technical Details
+
+- For stable switching between backend object storage services this project's backend is relying on, see `/doc/service-switch.md`.

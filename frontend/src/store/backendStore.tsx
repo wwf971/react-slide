@@ -13,6 +13,7 @@ class BackendStore {
   isDatabaseTesting = false;
   testingDatabaseKey = '';
   loadFailureMessage = '';
+  loadDatabasesRequestToken = 0;
 
   constructor() {
     makeAutoObservable(this, {}, { autoBind: true });
@@ -48,18 +49,22 @@ class BackendStore {
 
   async requestLoadDatabases() {
     if (this.isDatabaseLoading) return { ok: false };
+    const requestToken = this.loadDatabasesRequestToken + 1;
+    this.loadDatabasesRequestToken = requestToken;
     runInAction(() => {
       this.isDatabaseLoading = true;
     });
     try {
       const result = await this.requestJson(`${BACKEND_BASE_URL}/api/slide/database/presets`);
       if (!result.isOk || !result.payload?.ok) {
+        if (requestToken !== this.loadDatabasesRequestToken) return { ok: false };
         runInAction(() => {
           this.loadFailureMessage = result.payload?.message ?? 'Failed to load databases';
         });
         return { ok: false };
       }
       const currentKey = `${result.payload.currentDatabaseKey ?? ''}`;
+      if (requestToken !== this.loadDatabasesRequestToken) return { ok: false };
       runInAction(() => {
         this.currentDatabaseKey = currentKey;
         this.databaseItems = this.normalizeDatabaseItems(result.payload.databaseItems ?? [], currentKey);
@@ -67,6 +72,7 @@ class BackendStore {
       });
       return { ok: true };
     } finally {
+      if (requestToken !== this.loadDatabasesRequestToken) return;
       runInAction(() => {
         this.isDatabaseLoading = false;
       });
@@ -98,6 +104,7 @@ class BackendStore {
         [result.payload.databaseItem],
         this.currentDatabaseKey,
       )[0];
+      const isTestOk = result.isOk && result.payload?.ok;
       runInAction(() => {
         this.databaseItems = this.databaseItems.map((item) => {
           if (item.key !== testedItem.key) return item;
@@ -106,10 +113,12 @@ class BackendStore {
             ...testedItem,
           };
         });
-        this.loadFailureMessage = result.payload?.message ?? '';
+        this.loadFailureMessage = isTestOk
+          ? ''
+          : `${result.payload?.message ?? ''}`.trim() || 'Failed to test object-storage';
       });
       return {
-        ok: result.isOk && result.payload?.ok,
+        ok: isTestOk,
         message: result.payload?.message ?? '',
       };
     } finally {
@@ -136,8 +145,12 @@ class BackendStore {
         body: JSON.stringify({ databaseKey }),
       });
       if (!result.payload?.databaseItem) {
+        runInAction(() => {
+          this.loadFailureMessage = 'Invalid database switch response';
+        });
         return { ok: false, message: 'Invalid database switch response' };
       }
+      const isSwitchOk = result.isOk && result.payload?.ok;
       const nextCurrentKey = `${result.payload.currentDatabaseKey ?? databaseKey}`;
       const switchedItem = this.normalizeDatabaseItems([result.payload.databaseItem], nextCurrentKey)[0];
       runInAction(() => {
@@ -155,9 +168,12 @@ class BackendStore {
             isCurrent: true,
           };
         });
+        this.loadFailureMessage = isSwitchOk
+          ? ''
+          : `${result.payload?.message ?? ''}`.trim() || 'Failed to switch object-storage';
       });
       return {
-        ok: result.isOk && result.payload?.ok,
+        ok: isSwitchOk,
         message: result.payload?.message ?? '',
       };
     } finally {

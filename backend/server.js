@@ -55,11 +55,13 @@ const FRONTEND_ROUTE_PATTERNS = [
 
 const getFrontendRouteErrorPayload = () => {
   return {
-    ok: false,
+    code: -404,
     message: 'route not found',
-    guide: {
-      overview: '/overview/',
-      slide: '/slide/{slideId}',
+    data: {
+      guide: {
+        overview: '/overview/',
+        slide: '/slide/{slideId}',
+      },
     },
   };
 };
@@ -93,6 +95,49 @@ const getTimestampToken = () => {
   const minute = `${now.getMinutes()}`.padStart(2, '0');
   const second = `${now.getSeconds()}`.padStart(2, '0');
   return `${year}${month}${day}-${hour}${minute}${second}`;
+};
+
+const toErrorCode = () => {
+  return -1;
+};
+
+const sendSuccess = (res, data = undefined, message = '', statusCode = 200) => {
+  const body = { code: 0 };
+  if (data !== undefined) body.data = data;
+  const messageText = `${message ?? ''}`.trim();
+  if (messageText) body.message = messageText;
+  res.status(statusCode).json(body);
+};
+
+const sendError = (res, statusCode = 500, message = '', data = undefined) => {
+  const body = { code: toErrorCode(statusCode) };
+  const messageText = `${message ?? ''}`.trim();
+  if (messageText) body.message = messageText;
+  if (data !== undefined) body.data = data;
+  res.status(statusCode).json(body);
+};
+
+const sendStoreResult = (
+  res,
+  result,
+  {
+    successStatus = 200,
+    errorStatus = 400,
+  } = {},
+) => {
+  const isSuccess = result?.ok === true;
+  const { ok: _unusedOk, message, ...rest } = result ?? {};
+  const hasData = Object.keys(rest).length > 0;
+  if (isSuccess) {
+    sendSuccess(res, hasData ? rest : undefined, message, successStatus);
+    return;
+  }
+  sendError(
+    res,
+    errorStatus,
+    `${message ?? ''}`.trim() || 'request failed',
+    hasData ? rest : undefined,
+  );
 };
 
 const createSlideBackendApp = async () => {
@@ -159,13 +204,14 @@ const createSlideBackendApp = async () => {
   app.get('/api/slide/health', async (_req, res) => {
     try {
       await ensureBackendStoreReady(storeContext);
-      res.json({ ok: true, db: storeContext.info });
+      sendSuccess(res, { db: storeContext.info });
     } catch (error) {
-      res.status(503).json({
-        ok: false,
-        message: startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage service'),
-        db: storeContext.info,
-      });
+      sendError(
+        res,
+        503,
+        startupErrorText || (error instanceof Error ? error.message : 'failed to reach object-storage service'),
+        { db: storeContext.info },
+      );
     }
   });
 
@@ -194,8 +240,7 @@ const createSlideBackendApp = async () => {
         }
       }),
     );
-    res.json({
-      ok: true,
+    sendSuccess(res, {
       currentDatabaseKey: `${currentPreset?.KEY ?? ''}`,
       databaseItems,
     });
@@ -205,27 +250,24 @@ const createSlideBackendApp = async () => {
     const presetKey = `${req.body?.databaseKey ?? ''}`.trim();
     const preset = findObjectStoragePresetByKey(presetKey) ?? getCurrentPreset();
     if (!preset) {
-      res.status(400).json({
-        ok: false,
-        message: 'object-storage preset not found',
-      });
+      sendError(res, 400, 'object-storage preset not found');
       return;
     }
     try {
       const databaseItem = await testObjectStoragePreset(preset);
-      res.json({
-        ok: true,
-        databaseItem,
-      });
+      sendSuccess(res, { databaseItem });
     } catch (error) {
-      res.status(400).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to reach object-storage',
-        databaseItem: toObjectStorageItem(preset, {
-          isConnected: false,
-          errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
-        }),
-      });
+      sendError(
+        res,
+        400,
+        error instanceof Error ? error.message : 'failed to reach object-storage',
+        {
+          databaseItem: toObjectStorageItem(preset, {
+            isConnected: false,
+            errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
+          }),
+        },
+      );
     }
   });
 
@@ -233,37 +275,33 @@ const createSlideBackendApp = async () => {
     const presetKey = `${req.body?.databaseKey ?? ''}`.trim();
     const preset = findObjectStoragePresetByKey(presetKey);
     if (!preset) {
-      res.status(400).json({
-        ok: false,
-        message: 'object-storage preset not found',
-      });
+      sendError(res, 400, 'object-storage preset not found');
       return;
     }
     const nextIndex = OBJECT_STORAGE_LIST.findIndex((entry) => entry.KEY === preset.KEY);
     if (nextIndex < 0) {
-      res.status(400).json({
-        ok: false,
-        message: 'object-storage preset not found',
-      });
+      sendError(res, 400, 'object-storage preset not found');
       return;
     }
     if (nextIndex === currentObjectStorageIndex) {
       try {
         await ensureBackendStoreReady(storeContext);
-        res.json({
-          ok: true,
+        sendSuccess(res, {
           currentDatabaseKey: preset.KEY,
           databaseItem: toObjectStorageItem(preset, { isConnected: true }),
         });
       } catch (error) {
-        res.status(400).json({
-          ok: false,
-          message: error instanceof Error ? error.message : 'failed to reach object-storage',
-          databaseItem: toObjectStorageItem(preset, {
-            isConnected: false,
-            errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
-          }),
-        });
+        sendError(
+          res,
+          400,
+          error instanceof Error ? error.message : 'failed to reach object-storage',
+          {
+            databaseItem: toObjectStorageItem(preset, {
+              isConnected: false,
+              errorMessage: error instanceof Error ? error.message : 'failed to reach object-storage',
+            }),
+          },
+        );
       }
       return;
     }
@@ -271,16 +309,13 @@ const createSlideBackendApp = async () => {
     const nextContext = resetStoreContext(preset);
     try {
       await initializeStoreContext(nextContext);
-      res.json({
-        ok: true,
+      sendSuccess(res, {
         currentDatabaseKey: preset.KEY,
         databaseItem: toObjectStorageItem(preset, { isConnected: true }),
       });
     } catch (error) {
       startupErrorText = error instanceof Error ? error.message : 'failed to initialize object-storage backend';
-      res.status(400).json({
-        ok: false,
-        message: startupErrorText,
+      sendError(res, 400, startupErrorText, {
         databaseItem: toObjectStorageItem(preset, {
           isConnected: false,
           errorMessage: startupErrorText,
@@ -292,35 +327,25 @@ const createSlideBackendApp = async () => {
   app.get('/api/slide/slides', async (_req, res) => {
     try {
       const slides = await listSlides(storeContext);
-      res.json({ ok: true, slides });
+      sendSuccess(res, { slides });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to list slides',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to list slides');
     }
   });
 
   app.get('/api/slide/groups/overview', async (_req, res) => {
     try {
       const data = await getSlideGroupsOverview(storeContext);
-      res.json({
-        ok: true,
-        ...data,
-      });
+      sendSuccess(res, data);
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to load slide-group overview',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to load slide-group overview');
     }
   });
 
   app.get('/api/slide/groups', async (_req, res) => {
     try {
       const groups = await listSlideGroups(storeContext);
-      res.json({
-        ok: true,
+      sendSuccess(res, {
         groups: groups.map((group) => ({
           id: group.id,
           name: group.name,
@@ -330,41 +355,25 @@ const createSlideBackendApp = async () => {
         })),
       });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to list slide-groups',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to list slide-groups');
     }
   });
 
   app.post('/api/slide/groups', async (req, res) => {
     try {
       const group = await createSlideGroup(storeContext, req.body?.name ?? '');
-      res.json({
-        ok: true,
-        group,
-      });
+      sendSuccess(res, { group });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to create slide-group',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to create slide-group');
     }
   });
 
   app.patch('/api/slide/groups/:groupId', async (req, res) => {
     try {
       const result = await renameSlideGroup(storeContext, req.params.groupId, req.body?.name ?? '');
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to rename slide-group',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to rename slide-group');
     }
   });
 
@@ -376,264 +385,153 @@ const createSlideBackendApp = async () => {
         req.body?.slides ?? [],
         req.body?.folderPaths
       );
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to update slide-group slides',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to update slide-group slides');
     }
   });
 
   app.delete('/api/slide/groups/:groupId', async (req, res) => {
     try {
       const result = await deleteSlideGroup(storeContext, req.params.groupId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete slide-group',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete slide-group');
     }
   });
 
   app.post('/api/slide/slides', async (req, res) => {
     try {
       const slide = await createSlide(storeContext, req.body?.name ?? '');
-      res.json({ ok: true, slide });
+      sendSuccess(res, { slide });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to create slide',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to create slide');
     }
   });
 
   app.delete('/api/slide/slides/:slideId', async (req, res) => {
     try {
       const result = await deleteSlide(storeContext, req.params.slideId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete slide',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete slide');
     }
   });
 
   app.patch('/api/slide/slides/:slideId', async (req, res) => {
     try {
       const result = await renameSlide(storeContext, req.params.slideId, req.body?.name ?? '');
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to rename slide',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to rename slide');
     }
   });
 
   app.get('/api/slide/slides/:slideId/data', async (req, res) => {
     try {
       const result = await getSlideSnapshot(storeContext, req.params.slideId);
-      if (!result.ok) {
-        res.status(404).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to load slide data',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to load slide data');
     }
   });
 
   app.post('/api/slide/slides/:slideId/save-dirty', async (req, res) => {
     try {
       const result = await saveDirtySlide(storeContext, req.params.slideId, req.body ?? {});
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to save dirty slide',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to save dirty slide');
     }
   });
 
   app.delete('/api/slide/slides/:slideId/pages/:pageId', async (req, res) => {
     try {
       const result = await deletePage(storeContext, req.params.slideId, req.params.pageId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete page',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete page');
     }
   });
 
   app.delete('/api/slide/slides/:slideId/containers/:containerId', async (req, res) => {
     try {
       const result = await deleteContainer(storeContext, req.params.slideId, req.params.containerId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete container',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete container');
     }
   });
 
   app.delete('/api/slide/slides/:slideId/components/:compId', async (req, res) => {
     try {
       const result = await deleteComponent(storeContext, req.params.slideId, req.params.compId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete component',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete component');
     }
   });
 
   app.post('/api/slide/resources', async (req, res) => {
     try {
       const result = await createResource(storeContext, req.body?.kind ?? '');
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to create resource',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to create resource');
     }
   });
 
   app.post('/api/slide/resources/:resourceId/bytes', async (req, res) => {
     try {
       const result = await updateResourceBytes(storeContext, req.params.resourceId, req.body?.base64 ?? '');
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to update resource bytes',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to update resource bytes');
     }
   });
 
   app.get('/api/slide/resources/:resourceId/bytes', async (req, res) => {
     try {
       const result = await getResourceBytes(storeContext, req.params.resourceId);
-      if (!result.ok) {
-        res.status(404).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to load resource bytes',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to load resource bytes');
     }
   });
 
   app.post('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
       const result = await updateResourceText(storeContext, req.params.resourceId, req.body?.text ?? '');
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to update resource text',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to update resource text');
     }
   });
 
   app.get('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
       const result = await getResourceText(storeContext, req.params.resourceId);
-      if (!result.ok) {
-        res.status(404).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to load resource text',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to load resource text');
     }
   });
 
   app.delete('/api/slide/resources/:resourceId', async (req, res) => {
     try {
       const result = await deleteResource(storeContext, req.params.resourceId);
-      if (!result.ok) {
-        res.status(400).json(result);
-        return;
-      }
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 400 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to delete resource',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to delete resource');
     }
   });
 
   app.post('/api/slide/admin/reinit-database', async (_req, res) => {
     try {
       const result = await reinitDatabase(storeContext);
-      res.json(result);
+      sendStoreResult(res, result, { errorStatus: 500 });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to reinit database',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to reinit database');
     }
   });
 
@@ -645,17 +543,13 @@ const createSlideBackendApp = async () => {
       const payload = await dumpDatabaseSnapshot(storeContext);
       mkdirSync(backendDumpDir, { recursive: true });
       writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-      res.json({
-        ok: true,
+      sendSuccess(res, {
         fileName,
         filePath,
         dumpedAt: payload.dumpedAt,
       });
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to dump database',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to dump database');
     }
   });
 
@@ -665,10 +559,7 @@ const createSlideBackendApp = async () => {
       res.type('html').send(frontendIndexHtml);
       return;
     } catch {
-      res.status(503).json({
-        ok: false,
-        message: 'frontend build missing, run pnpm build',
-      });
+      sendError(res, 503, 'frontend build missing, run pnpm build');
     }
   };
   app.get(['/overview', '/overview/'], (_req, res) => {
@@ -677,53 +568,35 @@ const createSlideBackendApp = async () => {
   app.get('/slide/:slideId', (_req, res) => {
     const slideId = `${_req.params?.slideId ?? ''}`.trim();
     if (!slideId) {
-      res.status(404).json({
-        ok: false,
-        message: 'slide not found',
-      });
+      sendError(res, 404, 'slide not found');
       return;
     }
     listSlides(storeContext).then((slides) => {
       const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
       if (!isSlideFound) {
-        res.status(404).json({
-          ok: false,
-          message: `slide not found: ${slideId}`,
-        });
+        sendError(res, 404, `slide not found: ${slideId}`);
         return;
       }
       sendFrontendIndexHtml(res);
     }).catch((error) => {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to validate slide route',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide route');
     });
   });
   app.get('/group/:groupId', async (req, res) => {
     const groupId = `${req.params.groupId ?? ''}`.trim();
     if (!groupId) {
-      res.status(404).json({
-        ok: false,
-        message: 'slide-group not found',
-      });
+      sendError(res, 404, 'slide-group not found');
       return;
     }
     try {
       const groups = await listSlideGroups(storeContext);
       const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
       if (!isGroupFound) {
-        res.status(404).json({
-          ok: false,
-          message: `slide-group not found: ${groupId}`,
-        });
+        sendError(res, 404, `slide-group not found: ${groupId}`);
         return;
       }
     } catch (error) {
-      res.status(500).json({
-        ok: false,
-        message: error instanceof Error ? error.message : 'failed to validate slide-group route',
-      });
+      sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide-group route');
       return;
     }
     sendFrontendIndexHtml(res);
@@ -749,17 +622,11 @@ const createSlideBackendApp = async () => {
           const groups = await listSlideGroups(storeContext);
           const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
           if (!isGroupFound) {
-            res.status(404).json({
-              ok: false,
-              message: `slide-group not found: ${groupId}`,
-            });
+            sendError(res, 404, `slide-group not found: ${groupId}`);
             return;
           }
         } catch (error) {
-          res.status(500).json({
-            ok: false,
-            message: error instanceof Error ? error.message : 'failed to validate slide-group route',
-          });
+          sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide-group route');
           return;
         }
       }
@@ -768,17 +635,11 @@ const createSlideBackendApp = async () => {
           const slides = await listSlides(storeContext);
           const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
           if (!isSlideFound) {
-            res.status(404).json({
-              ok: false,
-              message: `slide not found: ${slideId}`,
-            });
+            sendError(res, 404, `slide not found: ${slideId}`);
             return;
           }
         } catch (error) {
-          res.status(500).json({
-            ok: false,
-            message: error instanceof Error ? error.message : 'failed to validate slide route',
-          });
+          sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide route');
           return;
         }
       }

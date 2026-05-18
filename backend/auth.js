@@ -101,20 +101,34 @@ const createSlideAuth = ({
     };
   };
 
+  const toErrorCode = () => {
+    return -1;
+  };
+
+  const sendSuccess = (res, data = undefined, message = '', statusCode = 200) => {
+    const body = { code: 0 };
+    if (data !== undefined) body.data = data;
+    const messageText = `${message ?? ''}`.trim();
+    if (messageText) body.message = messageText;
+    res.status(statusCode).json(body);
+  };
+
+  const sendError = (res, statusCode = 500, message = '', data = undefined) => {
+    const body = { code: toErrorCode(statusCode) };
+    const messageText = `${message ?? ''}`.trim();
+    if (messageText) body.message = messageText;
+    if (data !== undefined) body.data = data;
+    res.status(statusCode).json(body);
+  };
+
   const sendUnauthorized = (res, message = 'login required') => {
-    res.status(401).json({
-      ok: false,
-      message,
-    });
+    sendError(res, 401, message);
   };
 
   const registerAuthRoutes = (app) => {
     app.post('/api/login', (req, res) => {
       if (!isCredentialsConfigured) {
-        res.status(503).json({
-          ok: false,
-          message: 'login is not configured',
-        });
+        sendError(res, 503, 'login is not configured');
         return;
       }
       const inputUsername = toText(req?.body?.username);
@@ -127,10 +141,7 @@ const createSlideAuth = ({
       }
       const token = stableAuthToken;
       attachSession(res, token, configuredUsername);
-      res.json({
-        ok: true,
-        token,
-      });
+      sendSuccess(res, { token });
     });
 
     app.post('/api/login/token', (req, res) => {
@@ -141,10 +152,7 @@ const createSlideAuth = ({
         return;
       }
       attachSession(res, token, session.username);
-      res.json({
-        ok: true,
-        token,
-      });
+      sendSuccess(res, { token });
     });
 
     app.get('/api/login/check', (req, res) => {
@@ -153,18 +161,13 @@ const createSlideAuth = ({
         sendUnauthorized(res);
         return;
       }
-      res.json({
-        ok: true,
-        username: session.username,
-      });
+      sendSuccess(res, { username: session.username });
     });
 
     app.post('/api/login/logout', (req, res) => {
       const token = getTokenFromRequest(req);
       clearSession(res, token);
-      res.json({
-        ok: true,
-      });
+      sendSuccess(res);
     });
   };
 

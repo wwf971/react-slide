@@ -15,6 +15,8 @@ class SlidesGroupStore {
   isGroupLoading = false;
   isSubmitting = false;
   errorText = '';
+  overviewRequestToken = 0;
+  groupRequestToken = 0;
 
   constructor() {
     makeAutoObservable(this, {}, { autoBind: true });
@@ -62,6 +64,8 @@ class SlidesGroupStore {
 
   async requestLoadOverview() {
     if (this.isOverviewLoading) return { ok: false };
+    const requestToken = this.overviewRequestToken + 1;
+    this.overviewRequestToken = requestToken;
     runInAction(() => {
       this.isOverviewLoading = true;
       this.errorText = '';
@@ -69,6 +73,7 @@ class SlidesGroupStore {
     try {
       const result = await this.requestJson('/api/slide/groups/overview');
       if (!result.isOk || !result.payload?.ok) {
+        if (requestToken !== this.overviewRequestToken) return { ok: false };
         runInAction(() => {
           this.errorText = `${result.payload?.message ?? 'Failed to load overview'}`;
         });
@@ -82,6 +87,7 @@ class SlidesGroupStore {
         if (!slideId) return;
         nextSlideNameById[slideId] = `${slideItem?.name ?? ''}`.trim() || slideId;
       });
+      if (requestToken !== this.overviewRequestToken) return { ok: false };
       runInAction(() => {
         this.groupItems = groupItems.map((groupItem) => ({
           id: `${groupItem?.id ?? ''}`,
@@ -109,6 +115,7 @@ class SlidesGroupStore {
       });
       return { ok: true };
     } finally {
+      if (requestToken !== this.overviewRequestToken) return;
       runInAction(() => {
         this.isOverviewLoading = false;
       });
@@ -195,6 +202,8 @@ class SlidesGroupStore {
     const groupId = `${groupIdRaw ?? ''}`.trim();
     if (!groupId) return { ok: false };
     if (this.isGroupLoading) return { ok: false };
+    const requestToken = this.groupRequestToken + 1;
+    this.groupRequestToken = requestToken;
     runInAction(() => {
       this.isGroupLoading = true;
       this.errorText = '';
@@ -205,12 +214,14 @@ class SlidesGroupStore {
         this.requestJson('/api/slide/slides'),
       ]);
       if (!groupResult.isOk || !groupResult.payload?.ok) {
+        if (requestToken !== this.groupRequestToken) return { ok: false };
         runInAction(() => {
           this.errorText = `${groupResult.payload?.message ?? 'Failed to load slide-group'}`;
         });
         return { ok: false };
       }
       if (!slideResult.isOk || !slideResult.payload?.ok) {
+        if (requestToken !== this.groupRequestToken) return { ok: false };
         runInAction(() => {
           this.errorText = `${slideResult.payload?.message ?? 'Failed to load slides'}`;
         });
@@ -225,6 +236,7 @@ class SlidesGroupStore {
       });
       const result = groupResult;
       if (!result.isOk || !result.payload?.ok) {
+        if (requestToken !== this.groupRequestToken) return { ok: false };
         runInAction(() => {
           this.errorText = `${result.payload?.message ?? 'Failed to load slide-group'}`;
         });
@@ -233,12 +245,14 @@ class SlidesGroupStore {
       const groups = Array.isArray(result.payload?.groups) ? result.payload.groups : [];
       const targetGroup = groups.find((groupItem) => `${groupItem?.id ?? ''}` === groupId);
       if (!targetGroup) {
+        if (requestToken !== this.groupRequestToken) return { ok: false };
         runInAction(() => {
           this.currentGroup = null;
           this.errorText = 'slide-group not found';
         });
         return { ok: false };
       }
+      if (requestToken !== this.groupRequestToken) return { ok: false };
       runInAction(() => {
         this.slideNameById = nextSlideNameById;
         this.currentGroup = {
@@ -254,6 +268,7 @@ class SlidesGroupStore {
       });
       return { ok: true };
     } finally {
+      if (requestToken !== this.groupRequestToken) return;
       runInAction(() => {
         this.isGroupLoading = false;
       });
@@ -406,6 +421,19 @@ class SlidesGroupStore {
         this.isSubmitting = false;
       });
     }
+  }
+
+  resetStateForDatabaseSwitch() {
+    this.groupItems = [];
+    this.orphanSlideItems = [];
+    this.currentGroup = null;
+    this.slideNameById = {};
+    this.selectedOverviewGroupId = '';
+    this.errorText = '';
+    this.isOverviewLoading = false;
+    this.isGroupLoading = false;
+    this.overviewRequestToken += 1;
+    this.groupRequestToken += 1;
   }
 }
 

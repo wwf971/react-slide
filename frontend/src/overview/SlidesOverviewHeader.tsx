@@ -21,8 +21,9 @@ const SlidesOverviewHeader = observer(({
 
   const handleSwitchDatabase = async (presetKey: string) => {
     if (!backendStore?.requestSwitchDatabase) return;
-    const result = await backendStore.requestSwitchDatabase(presetKey);
-    if (!result?.ok) return;
+    slidesGroupStore.resetStateForDatabaseSwitch?.();
+    await backendStore.requestSwitchDatabase(presetKey);
+    await backendStore.requestLoadDatabases?.();
     await slidesGroupStore.requestLoadOverview();
   };
 

@@ -42,6 +42,45 @@ const buildAuthHeaders = (extraHeaders: HeadersInit = {}) => {
   };
 };
 
+const normalizeApiBody = (rawBody: any, responseText: string) => {
+  if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
+    return {
+      ok: false,
+      message: toText(responseText).slice(0, 200),
+    };
+  }
+  if (Object.prototype.hasOwnProperty.call(rawBody, 'code')) {
+    const codeValue = Number(rawBody.code);
+    const isSuccess = Number.isFinite(codeValue) && codeValue === 0;
+    const safeMessage = toText(rawBody.message)
+      || (isSuccess ? '' : toText(responseText).slice(0, 200));
+    const responseData = rawBody.data;
+    if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
+      return {
+        ...responseData,
+        ok: isSuccess,
+        ...(safeMessage ? { message: safeMessage } : {}),
+      };
+    }
+    return {
+      ok: isSuccess,
+      ...(responseData !== undefined ? { data: responseData } : {}),
+      ...(safeMessage ? { message: safeMessage } : {}),
+    };
+  }
+  if (!Object.prototype.hasOwnProperty.call(rawBody, 'ok')) {
+    return {
+      ...rawBody,
+      ok: false,
+      ...(toText(rawBody.message) ? {} : { message: toText(responseText).slice(0, 200) }),
+    };
+  }
+  return {
+    ...rawBody,
+    ...(toText(rawBody.message) ? {} : { message: toText(responseText).slice(0, 200) }),
+  };
+};
+
 const requestJsonWithAuth = async (inputUrl: string, options: RequestInit = {}) => {
   const url = withBackendBaseUrl(inputUrl);
   try {
@@ -51,24 +90,21 @@ const requestJsonWithAuth = async (inputUrl: string, options: RequestInit = {}) 
       headers: buildAuthHeaders(options.headers ?? {}),
     });
     const responseText = await response.text();
-    const responseBody = (() => {
+    const rawBody = (() => {
       try {
         return responseText ? JSON.parse(responseText) : {};
       } catch {
         return {};
       }
     })();
+    const normalizedBody = normalizeApiBody(rawBody, responseText);
     if (response.status === 401) {
       onUnauthorized();
     }
     return {
-      isOk: response.ok,
+      isOk: response.ok && normalizedBody.ok === true,
       status: response.status,
-      body: {
-        ...(responseBody ?? {}),
-        message: toText((responseBody as any)?.message)
-          || toText(responseText).slice(0, 200),
-      },
+      body: normalizedBody,
     };
   } catch (_error) {
     return {
