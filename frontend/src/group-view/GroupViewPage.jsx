@@ -36,7 +36,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
     slidesGroupStore.requestLoadOverview();
   }, [groupId, slidesGroupStore]);
 
-  const groupData = slidesGroupStore.currentGroup;
+  const groupData = slidesGroupStore.groupCurrent;
   const groupSlides = useMemo(() => {
     return Array.isArray(groupData?.slides) ? groupData.slides : [];
   }, [groupData?.slides]);

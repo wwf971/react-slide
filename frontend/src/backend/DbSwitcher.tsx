@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DownIcon, EndpointCard } from '@wwf971/react-comp-misc';
 import './DbSwitcher.css';
 
@@ -27,7 +28,14 @@ const DbSwitcher = ({
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [localSearchText, setLocalSearchText] = useState('');
+  const [dropdownLayout, setDropdownLayout] = useState({
+    left: 8,
+    top: 8,
+    width: 170,
+    maxHeight: 240,
+  });
   const rootRef = useRef<any>(null);
+  const dropdownRef = useRef<any>(null);
   const searchInputRef = useRef<any>(null);
 
   const effectiveSearchText = searchText || localSearchText.trim().toLowerCase();
@@ -44,17 +52,53 @@ const DbSwitcher = ({
 
   const currentItem = (items ?? []).find((entry: any) => entry?.key === currentId) ?? null;
 
+  const updateDropdownLayout = () => {
+    const rootElement = rootRef.current;
+    if (!rootElement) return;
+    const triggerRect = rootElement.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const horizontalPadding = 8;
+    const desiredWidth = Math.min(420, Math.max(170, viewportWidth - horizontalPadding * 2));
+    const width = Math.max(triggerRect.width, desiredWidth);
+    const maxLeft = Math.max(horizontalPadding, viewportWidth - width - horizontalPadding);
+    const left = Math.min(Math.max(triggerRect.left, horizontalPadding), maxLeft);
+    const top = Math.max(horizontalPadding, triggerRect.bottom + 2);
+    const maxHeight = Math.max(120, viewportHeight - top - horizontalPadding);
+    setDropdownLayout({
+      left,
+      top,
+      width,
+      maxHeight,
+    });
+  };
+
   useEffect(() => {
     if (!isDropdownOpen) return undefined;
     const onPointerDown = (event: any) => {
       const rootElement = rootRef.current;
-      if (!rootElement) return;
-      if (rootElement.contains(event.target)) return;
+      const dropdownElement = dropdownRef.current;
+      if (rootElement?.contains(event.target)) return;
+      if (dropdownElement?.contains(event.target)) return;
       setIsDropdownOpen(false);
     };
     window.addEventListener('pointerdown', onPointerDown);
     return () => {
       window.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [isDropdownOpen]);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    updateDropdownLayout();
+    const handleViewportChange = () => {
+      updateDropdownLayout();
+    };
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
     };
   }, [isDropdownOpen]);
 
@@ -97,8 +141,17 @@ const DbSwitcher = ({
         <span className={`db-switch-status-dot ${currentItem?.isInError ? 'is-error' : ''}`} />
         <span className="db-switch-current-icon">{renderIcon(DownIcon, 10, 10)}</span>
       </button>
-      {isDropdownOpen ? (
-        <div className="db-switch-dropdown">
+      {isDropdownOpen ? createPortal((
+        <div
+          ref={dropdownRef}
+          className="db-switch-dropdown"
+          style={{
+            left: `${dropdownLayout.left}px`,
+            top: `${dropdownLayout.top}px`,
+            width: `${dropdownLayout.width}px`,
+            maxHeight: `${dropdownLayout.maxHeight}px`,
+          }}
+        >
           <div className="db-switch-search-wrap">
             <input
               ref={searchInputRef}
@@ -179,7 +232,7 @@ const DbSwitcher = ({
             )}
           </div>
         </div>
-      ) : null}
+      ), document.body) : null}
     </div>
   );
 };

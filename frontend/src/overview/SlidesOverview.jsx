@@ -6,11 +6,16 @@ import SlidesOverviewHeader from './SlidesOverviewHeader';
 import SlidesOverviewNameCell from './SlidesOverviewNameCell';
 import './SlidesOverview.css';
 
-const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
+const SlidesOverview = observer(({
+  slidesGroupStore,
+  backendStore = null,
+  onEndpointSwitchStart,
+}) => {
   const navigate = useNavigate();
   const [isCreatePopupVisible, setIsCreatePopupVisible] = useState(false);
   const [isDeletePopupVisible, setIsDeletePopupVisible] = useState(false);
   const [orphanMenuState, setOrphanMenuState] = useState(null);
+  const isEndpointSwitching = backendStore?.isDatabaseSwitching === true;
 
   useEffect(() => {
     slidesGroupStore.requestLoadOverview();
@@ -49,8 +54,10 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
     }));
   }, [slidesGroupStore.groupItems]);
 
-  const selectedGroupId = `${slidesGroupStore.selectedOverviewGroupId ?? ''}`.trim();
-  const isNameEditable = !slidesGroupStore.isOverviewLoading && !slidesGroupStore.isSubmitting;
+  const selectedGroupId = `${slidesGroupStore.overviewGroupIdSelected ?? ''}`.trim();
+  const isNameEditable = !slidesGroupStore.isOverviewLoading
+    && !slidesGroupStore.isSubmitting
+    && !isEndpointSwitching;
 
   const renderNameCell = ({ data, rowId, isMissing = false, onRename }) => {
     return (
@@ -70,10 +77,12 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
         <SlidesOverviewHeader
           slidesGroupStore={slidesGroupStore}
           backendStore={backendStore}
+          onEndpointSwitchStart={onEndpointSwitchStart}
         />
         <div className="slides-overview-block">
           <div className="slides-overview-title-line">Orphan Slides</div>
           <FolderView
+            key={`orphan-${slidesGroupStore.overviewDataVersion}`}
             columns={{
               name: { data: 'name', align: 'left' },
               slideId: { data: 'slideId', align: 'left' },
@@ -132,7 +141,7 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             <button
               className="slides-overview-btn"
               type="button"
-              disabled={slidesGroupStore.isSubmitting}
+              disabled={slidesGroupStore.isSubmitting || isEndpointSwitching}
               onClick={() => {
                 setIsCreatePopupVisible(true);
               }}
@@ -142,7 +151,7 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             <button
               className="slides-overview-btn"
               type="button"
-              disabled={!selectedGroupId || slidesGroupStore.isSubmitting}
+              disabled={!selectedGroupId || slidesGroupStore.isSubmitting || isEndpointSwitching}
               onClick={() => {
                 setIsDeletePopupVisible(true);
               }}
@@ -152,7 +161,7 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             <button
               className="slides-overview-btn"
               type="button"
-              disabled={slidesGroupStore.isOverviewLoading}
+              disabled={slidesGroupStore.isOverviewLoading || isEndpointSwitching}
               onClick={() => {
                 slidesGroupStore.requestLoadOverview();
               }}
@@ -161,6 +170,7 @@ const SlidesOverview = observer(({ slidesGroupStore, backendStore = null }) => {
             </button>
           </div>
           <FolderView
+            key={`group-${slidesGroupStore.overviewDataVersion}`}
             columns={{
               name: { data: 'name', align: 'left' },
               slideNum: { data: 'slideNum', align: 'left' },

@@ -100,7 +100,7 @@ class AuthStore {
           password: this.password,
         }),
       });
-      if (!result.isOk || !result.body?.ok) {
+      if (result.body?.code !== 0) {
         runInAction(() => {
           this.isLoggedIn = false;
           this.message = toText(result.body?.message) || 'login failed';
@@ -108,7 +108,7 @@ class AuthStore {
         });
         return { code: -1 };
       }
-      const token = toText(result.body?.token);
+      const token = toText(result.body?.data?.token);
       runInAction(() => {
         this.token = token;
         this.password = '';
@@ -140,7 +140,7 @@ class AuthStore {
         },
         body: JSON.stringify({ token }),
       });
-      if (!result.isOk || !result.body?.ok) {
+      if (result.body?.code !== 0) {
         runInAction(() => {
           this.token = '';
           this.isLoggedIn = false;
@@ -150,7 +150,7 @@ class AuthStore {
         this.saveToken('');
         return { code: -1 };
       }
-      const nextToken = toText(result.body?.token) || token;
+      const nextToken = toText(result.body?.data?.token) || token;
       runInAction(() => {
         this.token = nextToken;
         this.isLoggedIn = true;

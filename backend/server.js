@@ -241,7 +241,7 @@ const createSlideBackendApp = async () => {
       }),
     );
     sendSuccess(res, {
-      currentDatabaseKey: `${currentPreset?.KEY ?? ''}`,
+      endpointKeyCurrent: `${currentPreset?.KEY ?? ''}`,
       databaseItems,
     });
   });
@@ -287,7 +287,7 @@ const createSlideBackendApp = async () => {
       try {
         await ensureBackendStoreReady(storeContext);
         sendSuccess(res, {
-          currentDatabaseKey: preset.KEY,
+          endpointKeyCurrent: preset.KEY,
           databaseItem: toObjectStorageItem(preset, { isConnected: true }),
         });
       } catch (error) {
@@ -305,17 +305,21 @@ const createSlideBackendApp = async () => {
       }
       return;
     }
-    currentObjectStorageIndex = nextIndex;
-    const nextContext = resetStoreContext(preset);
+    const nextContext = createObjectStorageContext(preset);
     try {
       await initializeStoreContext(nextContext);
+      currentObjectStorageIndex = nextIndex;
+      storeContext = nextContext;
       sendSuccess(res, {
-        currentDatabaseKey: preset.KEY,
+        endpointKeyCurrent: preset.KEY,
         databaseItem: toObjectStorageItem(preset, { isConnected: true }),
       });
     } catch (error) {
       startupErrorText = error instanceof Error ? error.message : 'failed to initialize object-storage backend';
+      currentObjectStorageIndex = nextIndex;
+      storeContext = nextContext;
       sendError(res, 400, startupErrorText, {
+        endpointKeyCurrent: `${getCurrentPreset()?.KEY ?? ''}`,
         databaseItem: toObjectStorageItem(preset, {
           isConnected: false,
           errorMessage: startupErrorText,
@@ -571,32 +575,12 @@ const createSlideBackendApp = async () => {
       sendError(res, 404, 'slide not found');
       return;
     }
-    listSlides(storeContext).then((slides) => {
-      const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
-      if (!isSlideFound) {
-        sendError(res, 404, `slide not found: ${slideId}`);
-        return;
-      }
-      sendFrontendIndexHtml(res);
-    }).catch((error) => {
-      sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide route');
-    });
+    sendFrontendIndexHtml(res);
   });
   app.get('/group/:groupId', async (req, res) => {
     const groupId = `${req.params.groupId ?? ''}`.trim();
     if (!groupId) {
       sendError(res, 404, 'slide-group not found');
-      return;
-    }
-    try {
-      const groups = await listSlideGroups(storeContext);
-      const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
-      if (!isGroupFound) {
-        sendError(res, 404, `slide-group not found: ${groupId}`);
-        return;
-      }
-    } catch (error) {
-      sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide-group route');
       return;
     }
     sendFrontendIndexHtml(res);
@@ -615,34 +599,6 @@ const createSlideBackendApp = async () => {
       return;
     }
     if (getIsFrontendRoutePath(req.path)) {
-      const groupId = getGroupIdFromFrontendPath(req.path);
-      const slideId = getSlideIdFromFrontendPath(req.path);
-      if (groupId) {
-        try {
-          const groups = await listSlideGroups(storeContext);
-          const isGroupFound = groups.some((group) => `${group?.id ?? ''}`.trim() === groupId);
-          if (!isGroupFound) {
-            sendError(res, 404, `slide-group not found: ${groupId}`);
-            return;
-          }
-        } catch (error) {
-          sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide-group route');
-          return;
-        }
-      }
-      if (slideId) {
-        try {
-          const slides = await listSlides(storeContext);
-          const isSlideFound = slides.some((slide) => `${slide?.id ?? ''}`.trim() === slideId);
-          if (!isSlideFound) {
-            sendError(res, 404, `slide not found: ${slideId}`);
-            return;
-          }
-        } catch (error) {
-          sendError(res, 500, error instanceof Error ? error.message : 'failed to validate slide route');
-          return;
-        }
-      }
       sendFrontendIndexHtml(res);
       return;
     }

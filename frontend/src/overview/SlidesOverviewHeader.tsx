@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import DbSwitcher from '../backend/DbSwitcher';
 import './SlidesOverviewHeader.css';
@@ -6,10 +6,14 @@ import './SlidesOverviewHeader.css';
 const SlidesOverviewHeader = observer(({
   slidesGroupStore,
   backendStore = null,
+  onEndpointSwitchStart,
 }: {
   slidesGroupStore: any;
   backendStore?: any;
+  onEndpointSwitchStart?: () => void;
 }) => {
+  const switchRequestTokenRef = useRef(0);
+
   useEffect(() => {
     if (!backendStore) return;
     backendStore.requestLoadDatabases();
@@ -17,13 +21,30 @@ const SlidesOverviewHeader = observer(({
 
   if (!backendStore) return null;
 
-  const isSettingBusy = slidesGroupStore.isOverviewLoading || slidesGroupStore.isSubmitting;
+  const isSettingBusy = slidesGroupStore.isOverviewLoading
+    || slidesGroupStore.isSubmitting
+    || backendStore.isDatabaseSwitching;
 
   const handleSwitchDatabase = async (presetKey: string) => {
     if (!backendStore?.requestSwitchDatabase) return;
-    slidesGroupStore.resetStateForDatabaseSwitch?.();
+    const switchRequestToken = switchRequestTokenRef.current + 1;
+    switchRequestTokenRef.current = switchRequestToken;
+    const isLatestSwitchRequest = () => switchRequestTokenRef.current === switchRequestToken;
+    if (onEndpointSwitchStart) {
+      onEndpointSwitchStart();
+    } else {
+      slidesGroupStore.resetStateForDatabaseSwitch?.();
+    }
     await backendStore.requestSwitchDatabase(presetKey);
-    await backendStore.requestLoadDatabases?.();
+    if (!isLatestSwitchRequest()) return;
+    await backendStore.requestLoadDatabases?.(true);
+    if (!isLatestSwitchRequest()) return;
+    const endpointKeyCurrent = `${backendStore.endpointKeyCurrent ?? ''}`.trim();
+    const currentDatabaseItem = (backendStore.databaseItems ?? []).find((item: any) => {
+      return `${item?.key ?? ''}`.trim() === endpointKeyCurrent;
+    });
+    const isCurrentDatabaseReadable = currentDatabaseItem?.isConnected === true && currentDatabaseItem?.isInError !== true;
+    if (!isCurrentDatabaseReadable) return;
     await slidesGroupStore.requestLoadOverview();
   };
 
@@ -32,7 +53,7 @@ const SlidesOverviewHeader = observer(({
       <DbSwitcher
         data={{
           items: backendStore.databaseItems ?? [],
-          currentId: backendStore.currentDatabaseKey ?? '',
+          currentId: backendStore.endpointKeyCurrent ?? '',
           loadFailureMessage: backendStore.loadFailureMessage ?? '',
         }}
         config={{

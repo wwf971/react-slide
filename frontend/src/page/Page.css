@@ -27,6 +27,9 @@
   align-items: stretch;
   gap: 6px;
   min-height: 26px;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 
 .slide-system-toolbar.is-hidden {
@@ -38,6 +41,20 @@
   align-items: stretch;
   gap: 4px;
   min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: visible;
+  white-space: nowrap;
+}
+
+.slide-toolbar-scrollable-group {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.slide-toolbar-scrollable-group::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .slide-settings-select {
@@ -195,7 +212,7 @@
   border-radius: 2px;
   box-sizing: border-box;
   line-height: 1.2;
-  white-space: normal;
+  white-space: nowrap;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -235,6 +252,11 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  min-width: 0;
+  max-width: 42%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
 }
 
 .slide-toolbar-icon-btn {

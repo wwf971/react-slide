@@ -7,7 +7,7 @@ const BACKEND_BASE_URL = resolveBackendBaseUrl();
 
 class BackendStore {
   databaseItems: any[] = [];
-  currentDatabaseKey = '';
+  endpointKeyCurrent = '';
   isDatabaseLoading = false;
   isDatabaseSwitching = false;
   isDatabaseTesting = false;
@@ -21,10 +21,13 @@ class BackendStore {
 
   async requestJson(url: string, options: any = {}) {
     const result = await requestJsonWithAuth(url, options);
+    const body = result.body ?? {};
+    const code = Number.isFinite(Number(body.code)) ? Number(body.code) : -1;
     return {
-      isOk: result.isOk,
       status: result.status,
-      payload: result.body ?? {},
+      code,
+      data: body.data ?? {},
+      message: `${body.message ?? ''}`.trim(),
     };
   }
 
@@ -47,8 +50,8 @@ class BackendStore {
     });
   }
 
-  async requestLoadDatabases() {
-    if (this.isDatabaseLoading) return { ok: false };
+  async requestLoadDatabases(isForceRefresh = false) {
+    if (this.isDatabaseLoading && !isForceRefresh) return { ok: false };
     const requestToken = this.loadDatabasesRequestToken + 1;
     this.loadDatabasesRequestToken = requestToken;
     runInAction(() => {
@@ -56,18 +59,21 @@ class BackendStore {
     });
     try {
       const result = await this.requestJson(`${BACKEND_BASE_URL}/api/slide/database/presets`);
-      if (!result.isOk || !result.payload?.ok) {
+      if (result.code !== 0) {
         if (requestToken !== this.loadDatabasesRequestToken) return { ok: false };
         runInAction(() => {
-          this.loadFailureMessage = result.payload?.message ?? 'Failed to load databases';
+          this.loadFailureMessage = result.message || 'Failed to load databases';
         });
         return { ok: false };
       }
-      const currentKey = `${result.payload.currentDatabaseKey ?? ''}`;
+      const currentKey = `${result.data.endpointKeyCurrent ?? ''}`;
+      const databaseItemsRaw = Array.isArray(result.data.databaseItems)
+        ? result.data.databaseItems
+        : [];
       if (requestToken !== this.loadDatabasesRequestToken) return { ok: false };
       runInAction(() => {
-        this.currentDatabaseKey = currentKey;
-        this.databaseItems = this.normalizeDatabaseItems(result.payload.databaseItems ?? [], currentKey);
+        this.endpointKeyCurrent = currentKey;
+        this.databaseItems = this.normalizeDatabaseItems(databaseItemsRaw, currentKey);
         this.loadFailureMessage = '';
       });
       return { ok: true };
@@ -94,17 +100,17 @@ class BackendStore {
         },
         body: JSON.stringify({ databaseKey }),
       });
-      if (!result.payload?.databaseItem) {
+      if (!result.data?.databaseItem) {
         runInAction(() => {
           this.loadFailureMessage = 'Invalid database test response';
         });
         return { ok: false, message: 'Invalid database test response' };
       }
       const testedItem = this.normalizeDatabaseItems(
-        [result.payload.databaseItem],
-        this.currentDatabaseKey,
+        [result.data.databaseItem],
+        this.endpointKeyCurrent,
       )[0];
-      const isTestOk = result.isOk && result.payload?.ok;
+      const isTestOk = result.code === 0;
       runInAction(() => {
         this.databaseItems = this.databaseItems.map((item) => {
           if (item.key !== testedItem.key) return item;
@@ -115,11 +121,11 @@ class BackendStore {
         });
         this.loadFailureMessage = isTestOk
           ? ''
-          : `${result.payload?.message ?? ''}`.trim() || 'Failed to test object-storage';
+          : result.message || 'Failed to test object-storage';
       });
       return {
         ok: isTestOk,
-        message: result.payload?.message ?? '',
+        message: result.message,
       };
     } finally {
       runInAction(() => {
@@ -131,10 +137,17 @@ class BackendStore {
 
   async requestSwitchDatabase(databaseKey: string) {
     if (!databaseKey) return { ok: false };
-    if (this.currentDatabaseKey === databaseKey) return { ok: true };
-    if (this.isDatabaseSwitching) return { ok: false };
+    if (this.isDatabaseSwitching) {
+      return {
+        ok: false,
+        isSelected: false,
+        isBusy: true,
+        message: 'Switch in progress',
+      };
+    }
     runInAction(() => {
       this.isDatabaseSwitching = true;
+      this.loadFailureMessage = '';
     });
     try {
       const result = await this.requestJson(`${BACKEND_BASE_URL}/api/slide/database/switch`, {
@@ -144,37 +157,52 @@ class BackendStore {
         },
         body: JSON.stringify({ databaseKey }),
       });
-      if (!result.payload?.databaseItem) {
-        runInAction(() => {
-          this.loadFailureMessage = 'Invalid database switch response';
-        });
-        return { ok: false, message: 'Invalid database switch response' };
-      }
-      const isSwitchOk = result.isOk && result.payload?.ok;
-      const nextCurrentKey = `${result.payload.currentDatabaseKey ?? databaseKey}`;
-      const switchedItem = this.normalizeDatabaseItems([result.payload.databaseItem], nextCurrentKey)[0];
+      const isSwitchOk = result.code === 0;
+      const message = result.message;
+      const nextCurrentKey = `${result.data?.endpointKeyCurrent ?? ''}`.trim();
+      const switchDatabaseItemRaw = result.data?.databaseItem ?? null;
+      const switchDatabaseItem = switchDatabaseItemRaw
+        ? this.normalizeDatabaseItems([switchDatabaseItemRaw], nextCurrentKey || this.endpointKeyCurrent)[0]
+        : null;
       runInAction(() => {
-        this.currentDatabaseKey = nextCurrentKey;
-        this.databaseItems = this.databaseItems.map((item) => {
-          if (item.key !== switchedItem.key) {
+        if (nextCurrentKey) {
+          this.endpointKeyCurrent = nextCurrentKey;
+          this.databaseItems = this.databaseItems.map((item) => ({
+            ...item,
+            isCurrent: item.key === nextCurrentKey,
+          }));
+        }
+        if (switchDatabaseItem?.key) {
+          let isItemUpdated = false;
+          this.databaseItems = this.databaseItems.map((item) => {
+            if (item.key !== switchDatabaseItem.key) return item;
+            isItemUpdated = true;
             return {
               ...item,
-              isCurrent: false,
+              ...switchDatabaseItem,
+              isCurrent: item.key === (nextCurrentKey || this.endpointKeyCurrent),
             };
+          });
+          if (!isItemUpdated) {
+            this.databaseItems = [
+              ...this.databaseItems,
+              {
+                ...switchDatabaseItem,
+                isCurrent: switchDatabaseItem.key === (nextCurrentKey || this.endpointKeyCurrent),
+              },
+            ];
           }
-          return {
-            ...item,
-            ...switchedItem,
-            isCurrent: true,
-          };
-        });
+        }
         this.loadFailureMessage = isSwitchOk
           ? ''
-          : `${result.payload?.message ?? ''}`.trim() || 'Failed to switch object-storage';
+          : message || 'Failed to switch object-storage';
       });
+      const effectiveCurrentKey = nextCurrentKey || this.endpointKeyCurrent;
+      const isSelected = effectiveCurrentKey === `${databaseKey ?? ''}`.trim();
       return {
         ok: isSwitchOk,
-        message: result.payload?.message ?? '',
+        isSelected,
+        message,
       };
     } finally {
       runInAction(() => {

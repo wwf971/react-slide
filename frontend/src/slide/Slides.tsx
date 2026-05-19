@@ -12,6 +12,7 @@ const Slides = observer(({
   requestedSlideId = '',
   onCurrentSlideIdChange,
   onRequestOpenGroupView,
+  onEndpointSwitchStart,
 }: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
   const currentPageId = currentPage?.id ?? '';
@@ -123,6 +124,7 @@ const Slides = observer(({
         <Header
           slidesStore={store}
           backendStore={backendStore ?? null}
+          onEndpointSwitchStart={onEndpointSwitchStart}
           config={{
             isHidden: isFullWindow,
             isViewInsideGroupButtonVisible: Boolean(currentGroupId),

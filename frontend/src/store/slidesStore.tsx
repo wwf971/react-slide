@@ -45,6 +45,19 @@ const hasDirtyState = (dirtyState) => {
   );
 };
 
+const createEmptySlideSnapshot = () => {
+  return {
+    metadata: {
+      pageIds: [],
+      currentPageId: '',
+      aspectRatio: { x: 16, y: 9 },
+    },
+    pageDataById: {},
+    containerDataById: {},
+    compDataById: {},
+  };
+};
+
 const cloneData = (value) => {
   return JSON.parse(JSON.stringify(value ?? {}));
 };
@@ -367,19 +380,22 @@ class SlidesStore {
   async requestReloadAfterDatabaseSwitch() {
     if (this.isSlidesInitializing) return { ok: false };
     if (!this.slidesPersistStore) return { ok: false };
-    runInAction(() => {
-      this.slideItems = [];
-      this.slideCurrentId = '';
-      this.slideRuntimeBySlideId = {};
-      this.dirtyPageStateBySlideId = {};
-      this.dirtyPageStateById = {};
-      this.isSlideInitAttempted = false;
-      this.isSlideInitFailed = false;
-      this.persistFailureMessage = '';
-    });
-    this.slidesPersistStore.clearLocalSnapshotCache?.();
+    this.resetStateForDatabaseSwitch();
     await this.requestInitializeSlides(true);
-    return { ok: true };
+    return { ok: this.isSlideInitFailed !== true };
+  }
+
+  resetStateForDatabaseSwitch() {
+    this.slideItems = [];
+    this.slideCurrentId = '';
+    this.slideRuntimeBySlideId = {};
+    this.dirtyPageStateBySlideId = {};
+    this.dirtyPageStateById = {};
+    this.isSlideInitAttempted = false;
+    this.isSlideInitFailed = false;
+    this.persistFailureMessage = '';
+    this.replaceRuntimeData(createEmptySlideSnapshot());
+    this.slidesPersistStore?.clearLocalSnapshotCache?.();
   }
 
   async requestSwitchSlide(slideId) {
@@ -620,16 +636,7 @@ class SlidesStore {
           this.slideCurrentId = '';
           this.slideRuntimeBySlideId = {};
           this.dirtyPageStateBySlideId = {};
-          this.replaceRuntimeData({
-            metadata: {
-              pageIds: [],
-              currentPageId: '',
-              aspectRatio: { x: 16, y: 9 },
-            },
-            pageDataById: {},
-            containerDataById: {},
-            compDataById: {},
-          });
+          this.replaceRuntimeData(createEmptySlideSnapshot());
           this.persistFailureMessage = '';
         });
         return { ok: true };

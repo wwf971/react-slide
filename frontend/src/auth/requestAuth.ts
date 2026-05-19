@@ -43,42 +43,36 @@ const buildAuthHeaders = (extraHeaders: HeadersInit = {}) => {
 };
 
 const normalizeApiBody = (rawBody: any, responseText: string) => {
+  const fallbackMessage = toText(responseText).slice(0, 200);
   if (!rawBody || typeof rawBody !== 'object' || Array.isArray(rawBody)) {
-    return {
-      ok: false,
-      message: toText(responseText).slice(0, 200),
-    };
+    const output: any = { code: -1 };
+    if (fallbackMessage) output.message = fallbackMessage;
+    return output;
   }
   if (Object.prototype.hasOwnProperty.call(rawBody, 'code')) {
     const codeValue = Number(rawBody.code);
-    const isSuccess = Number.isFinite(codeValue) && codeValue === 0;
-    const safeMessage = toText(rawBody.message)
-      || (isSuccess ? '' : toText(responseText).slice(0, 200));
-    const responseData = rawBody.data;
-    if (responseData && typeof responseData === 'object' && !Array.isArray(responseData)) {
-      return {
-        ...responseData,
-        ok: isSuccess,
-        ...(safeMessage ? { message: safeMessage } : {}),
-      };
+    const normalizedCode = Number.isFinite(codeValue) ? codeValue : -1;
+    const output: any = {
+      code: normalizedCode,
+    };
+    if (Object.prototype.hasOwnProperty.call(rawBody, 'data')) {
+      output.data = rawBody.data;
     }
-    return {
-      ok: isSuccess,
-      ...(responseData !== undefined ? { data: responseData } : {}),
-      ...(safeMessage ? { message: safeMessage } : {}),
-    };
+    const messageText = toText(rawBody.message) || (normalizedCode === 0 ? '' : fallbackMessage);
+    if (messageText) {
+      output.message = messageText;
+    }
+    return output;
   }
-  if (!Object.prototype.hasOwnProperty.call(rawBody, 'ok')) {
-    return {
-      ...rawBody,
-      ok: false,
-      ...(toText(rawBody.message) ? {} : { message: toText(responseText).slice(0, 200) }),
-    };
+  const output: any = { code: -1 };
+  if (Object.keys(rawBody).length > 0) {
+    output.data = rawBody;
   }
-  return {
-    ...rawBody,
-    ...(toText(rawBody.message) ? {} : { message: toText(responseText).slice(0, 200) }),
-  };
+  const messageText = toText(rawBody.message) || fallbackMessage;
+  if (messageText) {
+    output.message = messageText;
+  }
+  return output;
 };
 
 const requestJsonWithAuth = async (inputUrl: string, options: RequestInit = {}) => {
@@ -102,15 +96,16 @@ const requestJsonWithAuth = async (inputUrl: string, options: RequestInit = {}) 
       onUnauthorized();
     }
     return {
-      isOk: response.ok && normalizedBody.ok === true,
       status: response.status,
       body: normalizedBody,
     };
   } catch (_error) {
     return {
-      isOk: false,
       status: 0,
-      body: {},
+      body: {
+        code: -1,
+        message: 'network request failed',
+      },
     };
   }
 };

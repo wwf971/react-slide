@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
 import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { Login } from '@wwf971/react-comp-misc';
@@ -34,7 +34,12 @@ const resolveComp = (compName) => {
   return CompMetadata;
 };
 
-const SlideRoutePage = observer(({ slidesStore, backendStore, getComp }) => {
+const SlideRoutePage = observer(({
+  slidesStore,
+  backendStore,
+  getComp,
+  onEndpointSwitchStart,
+}) => {
   const navigate = useNavigate();
   const params = useParams();
   const routeSlideId = `${params?.slideId ?? ''}`.trim();
@@ -45,6 +50,7 @@ const SlideRoutePage = observer(({ slidesStore, backendStore, getComp }) => {
       backendStore={backendStore}
       getComp={getComp}
       requestedSlideId={routeSlideId}
+      onEndpointSwitchStart={onEndpointSwitchStart}
       onRequestOpenGroupView={(groupId, slideId) => {
         const safeGroupId = `${groupId ?? ''}`.trim();
         const safeSlideId = `${slideId ?? ''}`.trim();
@@ -63,7 +69,13 @@ const SlideRoutePage = observer(({ slidesStore, backendStore, getComp }) => {
   );
 });
 
-const SlideRoutes = ({ slidesStore, backendStore, slidesGroupStore, getComp }) => {
+const SlideRoutes = ({
+  slidesStore,
+  backendStore,
+  slidesGroupStore,
+  getComp,
+  onEndpointSwitchStart,
+}) => {
   return (
     <BrowserRouter basename={routerBasename || undefined}>
       <Routes>
@@ -73,6 +85,7 @@ const SlideRoutes = ({ slidesStore, backendStore, slidesGroupStore, getComp }) =
             <SlidesOverview
               slidesGroupStore={slidesGroupStore}
               backendStore={backendStore}
+              onEndpointSwitchStart={onEndpointSwitchStart}
             />
           )}
         />
@@ -93,6 +106,7 @@ const SlideRoutes = ({ slidesStore, backendStore, slidesGroupStore, getComp }) =
               slidesStore={slidesStore}
               backendStore={backendStore}
               getComp={getComp}
+              onEndpointSwitchStart={onEndpointSwitchStart}
             />
           )}
         />
@@ -106,6 +120,10 @@ const App = observer(() => {
   const backendStore = useMemo(() => createBackendStore(), []);
   const slidesGroupStore = useMemo(() => createSlidesGroupStore(), []);
   const getComp = useMemo(() => resolveComp, []);
+  const onEndpointSwitchStart = useCallback(() => {
+    slidesStore.resetStateForDatabaseSwitch?.();
+    slidesGroupStore.resetStateForDatabaseSwitch?.();
+  }, [slidesStore, slidesGroupStore]);
 
   useEffect(() => {
     authStore.initialize();
@@ -140,6 +158,7 @@ const App = observer(() => {
         backendStore={backendStore}
         slidesGroupStore={slidesGroupStore}
         getComp={getComp}
+        onEndpointSwitchStart={onEndpointSwitchStart}
       />
     </div>
   );

@@ -77,6 +77,9 @@ class SlidesPersistStore {
     this.persistedDataBySlideId = {};
     this.resourceBytesById = {};
     this.slideItems = [];
+    this.listSlidesPendingPromise = null;
+    this.listSlidesLoadedAt = 0;
+    this.listSlidesFailedAt = 0;
   }
 
   getSnapshot(slideId: string = 'local-demo') {
@@ -92,10 +95,13 @@ class SlidesPersistStore {
 
   async requestJson(url: string, options: any = {}) {
     const result = await requestJsonWithAuth(url, options);
+    const body = result.body ?? {};
+    const code = Number.isFinite(Number(body.code)) ? Number(body.code) : -1;
     return {
-      isOk: result.isOk,
       status: result.status,
-      payload: result.body ?? {},
+      code,
+      data: body.data ?? {},
+      message: `${body.message ?? ''}`.trim(),
     };
   }
 
@@ -110,7 +116,7 @@ class SlidesPersistStore {
     if (!isForceRefresh && isRecentFailure) {
       return {
         ok: false,
-        slides: this.slideItems,
+        slides: [],
         message: 'Slide list could not be loaded. Please retry shortly.',
       };
     }
@@ -119,18 +125,17 @@ class SlidesPersistStore {
     }
     const listSlidesPromise = (async () => {
       const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
-      if (!result.isOk) {
+      if (result.code !== 0) {
         this.listSlidesFailedAt = Date.now();
-        const backendMessage = `${result.payload?.message ?? ''}`.trim();
+        const backendMessage = result.message;
+        this.slideItems = [];
         return {
           ok: false,
-          slides: this.slideItems,
-          message: backendMessage
-            ? `${backendMessage}. Local Demo is displayed.`
-            : 'Slide list could not be loaded. Local Demo is displayed.',
+          slides: [],
+          message: backendMessage || 'Slide list could not be loaded.',
         };
       }
-      const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
+      const slides = Array.isArray(result.data?.slides) ? result.data.slides : [];
       this.slideItems = slides.map((slide: any) => ({
         id: `${slide.id ?? ''}`,
         name: `${slide.name ?? ''}`,
@@ -161,10 +166,10 @@ class SlidesPersistStore {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/data`,
     );
-    if (!result.isOk || !result.payload?.ok) {
+    if (result.code !== 0) {
       return { ok: false, data: null, message: 'Failed to load slide data' };
     }
-    const data = normalizeSlideSnapshot(result.payload.data ?? {});
+    const data = normalizeSlideSnapshot(result.data.data ?? {});
     this.persistedDataBySlideId[slideId] = data;
     return { ok: true, data: cloneData(data) };
   }
@@ -177,16 +182,16 @@ class SlidesPersistStore {
       },
       body: JSON.stringify({ name }),
     });
-    if (!result.isOk || !result.payload?.ok || !result.payload?.slide) {
+    if (result.code !== 0 || !result.data?.slide) {
       return { ok: false, message: 'Failed to create slide' };
     }
     const slide = {
-      id: `${result.payload.slide.id ?? ''}`,
-      name: `${result.payload.slide.name ?? ''}`,
+      id: `${result.data.slide.id ?? ''}`,
+      name: `${result.data.slide.name ?? ''}`,
     };
     this.slideItems = [...this.slideItems, slide];
-    if (result.payload.slide.data) {
-      this.persistedDataBySlideId[slide.id] = normalizeSlideSnapshot(result.payload.slide.data);
+    if (result.data.slide.data) {
+      this.persistedDataBySlideId[slide.id] = normalizeSlideSnapshot(result.data.slide.data);
     }
     return {
       ok: true,
@@ -208,8 +213,8 @@ class SlidesPersistStore {
         body: JSON.stringify({ name }),
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to rename slide' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to rename slide' };
     }
     this.slideItems = this.slideItems.map((item) => {
       if (item.id !== slideId) return item;
@@ -225,10 +230,10 @@ class SlidesPersistStore {
         method: 'POST',
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
+    if (result.code !== 0) {
       return { ok: false, message: 'Failed to re-initialize database' };
     }
-    const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
+    const slides = Array.isArray(result.data?.slides) ? result.data.slides : [];
     this.slideItems = slides.map((slide: any) => ({
       id: `${slide.id ?? ''}`,
       name: `${slide.name ?? ''}`,
@@ -246,12 +251,12 @@ class SlidesPersistStore {
       },
       body: JSON.stringify({ kind }),
     });
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to create resource' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to create resource' };
     }
     return {
       ok: true,
-      resourceId: `${result.payload.resourceId ?? ''}`,
+      resourceId: `${result.data.resourceId ?? ''}`,
     };
   }
 
@@ -266,8 +271,8 @@ class SlidesPersistStore {
         body: JSON.stringify({ base64 }),
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to save resource bytes' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to save resource bytes' };
     }
     const commaIndex = base64.indexOf(',');
     const rawBase64 = commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
@@ -281,10 +286,10 @@ class SlidesPersistStore {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes`,
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to load resource bytes' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to load resource bytes' };
     }
-    const base64 = `${result.payload.base64 ?? ''}`;
+    const base64 = `${result.data.base64 ?? ''}`;
     this.resourceBytesById[resourceId] = base64;
     return { ok: true, base64 };
   }
@@ -300,8 +305,8 @@ class SlidesPersistStore {
         body: JSON.stringify({ text }),
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to save resource text' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to save resource text' };
     }
     return { ok: true };
   }
@@ -310,18 +315,18 @@ class SlidesPersistStore {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text`,
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to load resource text' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to load resource text' };
     }
-    return { ok: true, text: `${result.payload.text ?? ''}` };
+    return { ok: true, text: `${result.data.text ?? ''}` };
   }
 
   async deleteSlide(slideId: string) {
     const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}`, {
       method: 'DELETE',
     });
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to delete slide' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to delete slide' };
     }
     this.slideItems = this.slideItems.filter((item) => item.id !== slideId);
     delete this.persistedDataBySlideId[slideId];
@@ -335,18 +340,18 @@ class SlidesPersistStore {
         method: 'DELETE',
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
-      return { ok: false, message: result.payload?.message ?? 'Failed to delete page' };
+    if (result.code !== 0) {
+      return { ok: false, message: result.message || 'Failed to delete page' };
     }
     return { ok: true };
   }
 
   async getSlideGroupOwnerMap() {
     const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/groups/overview`);
-    if (!result.isOk || !result.payload?.ok) {
+    if (result.code !== 0) {
       return { ok: false, ownerGroupIdBySlideId: {} };
     }
-    const slideGroups = Array.isArray(result.payload?.slideGroups) ? result.payload.slideGroups : [];
+    const slideGroups = Array.isArray(result.data?.slideGroups) ? result.data.slideGroups : [];
     const ownerGroupIdBySlideId = {};
     slideGroups.forEach((groupItem: any) => {
       const groupId = `${groupItem?.id ?? ''}`.trim();
@@ -368,17 +373,17 @@ class SlidesPersistStore {
         method: 'POST',
       },
     );
-    if (!result.isOk || !result.payload?.ok) {
+    if (result.code !== 0) {
       return {
         ok: false,
-        message: result.payload?.message ?? 'Failed to dump database',
+        message: result.message || 'Failed to dump database',
       };
     }
     return {
       ok: true,
-      fileName: `${result.payload.fileName ?? ''}`,
-      filePath: `${result.payload.filePath ?? ''}`,
-      dumpedAt: `${result.payload.dumpedAt ?? ''}`,
+      fileName: `${result.data.fileName ?? ''}`,
+      filePath: `${result.data.filePath ?? ''}`,
+      dumpedAt: `${result.data.dumpedAt ?? ''}`,
     };
   }
 
@@ -484,25 +489,18 @@ class SlidesPersistStore {
         },
       );
 
-      if (!result.isOk) {
+      if (result.body?.code !== 0) {
         return {
           ok: false,
           savedPageIds: [],
           message: `Save failed: backend status ${result.status}`,
         };
       }
-      if (!result.body?.ok) {
-        return {
-          ok: false,
-          savedPageIds: [],
-          message: result.body?.message ?? 'Save failed: backend returned error',
-        };
-      }
 
       this.applyDirtyPagesToMemory(slideId, runtimeData, dirtyPageStateById, dirtyPageIds);
       return {
         ok: true,
-        savedPageIds: result.body?.savedPageIds ?? dirtyPageIds,
+        savedPageIds: result.body?.data?.savedPageIds ?? dirtyPageIds,
       };
     } catch (_error) {
       return {

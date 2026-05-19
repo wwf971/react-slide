@@ -1,6 +1,7 @@
 .db-switch-root {
   display: inline-flex;
   position: relative;
+  flex: 0 0 auto;
 }
 
 .db-switch-current-btn {
@@ -8,6 +9,7 @@
   align-items: center;
   gap: 4px;
   height: 28px;
+  width: 170px;
   min-width: 170px;
   border: 1px solid #7aa7d8;
   border-radius: 2px;
@@ -44,11 +46,8 @@
 }
 
 .db-switch-dropdown {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 2px);
-  width: 420px;
-  max-height: calc(100vh - 16px);
+  position: fixed;
+  min-width: 170px;
   border: 1px solid #7aa7d8;
   border-radius: 2px;
   background: #ffffff;

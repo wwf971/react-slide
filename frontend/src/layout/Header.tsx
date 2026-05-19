@@ -41,6 +41,20 @@ const renderIcon = (IconComp: any, width: number, height: number) => {
   return React.createElement(IconComp, { width, height });
 };
 
+const handleHorizontalWheelScroll = (
+  event: React.WheelEvent<HTMLDivElement>,
+) => {
+  const host = event.currentTarget;
+  const maxScrollLeft = host.scrollWidth - host.clientWidth;
+  if (maxScrollLeft <= 0) return;
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+    ? event.deltaX
+    : event.deltaY;
+  if (Math.abs(delta) < 0.01) return;
+  event.preventDefault();
+  host.scrollLeft += delta;
+};
+
 const defaultConfig: Required<
   Pick<
     HeaderConfig,
@@ -76,14 +90,17 @@ const Header = observer(
     backendStore = null,
     data = {},
     config = {},
+    onEndpointSwitchStart,
     onEvent,
   }: {
     slidesStore: any;
     backendStore?: any;
     data?: HeaderData;
     config?: HeaderConfig;
+    onEndpointSwitchStart?: () => void;
     onEvent?: (event: HeaderEvent) => boolean | void | Promise<boolean | void>;
   }) => {
+    const switchRequestTokenRef = React.useRef(0);
     const mergedConfig = { ...defaultConfig, ...config };
     const isPersisting = slidesStore.isPersisting ?? false;
     const isSlideDeleting =
@@ -125,19 +142,42 @@ const Header = observer(
 
     const handleSwitchDatabase = async (presetKey: string) => {
       if (!backendStore?.requestSwitchDatabase) return;
+      const switchRequestToken = switchRequestTokenRef.current + 1;
+      switchRequestTokenRef.current = switchRequestToken;
+      const isLatestSwitchRequest = () => switchRequestTokenRef.current === switchRequestToken;
+      if (onEndpointSwitchStart) {
+        onEndpointSwitchStart();
+      } else {
+        slidesStore.resetStateForDatabaseSwitch?.();
+      }
       await backendStore.requestSwitchDatabase(presetKey);
-      await backendStore.requestLoadDatabases?.();
-      await slidesStore.requestReloadAfterDatabaseSwitch?.();
+      if (!isLatestSwitchRequest()) return;
+      await backendStore.requestLoadDatabases?.(true);
+      if (!isLatestSwitchRequest()) return;
+      const endpointKeyCurrent = `${backendStore.endpointKeyCurrent ?? ''}`.trim();
+      const currentDatabaseItem = (backendStore.databaseItems ?? []).find((item: any) => {
+        return `${item?.key ?? ''}`.trim() === endpointKeyCurrent;
+      });
+      const isCurrentDatabaseReadable = currentDatabaseItem?.isConnected === true && currentDatabaseItem?.isInError !== true;
+      if (!isCurrentDatabaseReadable) return;
+      await slidesStore.requestInitializeSlides?.(true);
+      if (!isLatestSwitchRequest()) return;
+      if (slidesStore.isSlideInitFailed !== true) {
+        slidesStore.persistFailureMessage = '';
+      }
     };
 
     return (
       <div className={`slide-system-toolbar ${mergedConfig.isHidden ? 'is-hidden' : ''}`}>
-        <div className="slide-toolbar-settings">
+        <div
+          className="slide-toolbar-settings slide-toolbar-scrollable-group"
+          onWheel={handleHorizontalWheelScroll}
+        >
           {mergedConfig.isDatabaseSwitcherVisible && backendStore ? (
             <DbSwitcher
               data={{
                 items: backendStore.databaseItems ?? [],
-                currentId: backendStore.currentDatabaseKey ?? '',
+                currentId: backendStore.endpointKeyCurrent ?? '',
                 loadFailureMessage: backendStore.loadFailureMessage ?? '',
               }}
               config={{
@@ -258,7 +298,10 @@ const Header = observer(
         >
           {persistFailureMessage}
         </div>
-        <div className="slide-toolbar-page-nav">
+        <div
+          className="slide-toolbar-page-nav slide-toolbar-scrollable-group"
+          onWheel={handleHorizontalWheelScroll}
+        >
           {mergedConfig.isPageActionButtonsVisible ? (
             <>
               {mergedConfig.isSaveButtonVisible ? (
