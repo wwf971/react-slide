@@ -1,7 +1,7 @@
 import React, { createContext, useContext } from 'react';
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createDemoPersistStore } from './slidesPersistStore';
-import { getAvailableCompScripts, resolveCompScriptPayload } from '../compScript';
+import { getAvailableCompScripts, resolveCompScriptPayload } from '../comp_script';
 
 const MIN_RATIO_SIZE = 0.03;
 const MAX_RATIO_SIZE = 4;

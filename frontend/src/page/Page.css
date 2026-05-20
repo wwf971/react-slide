@@ -28,8 +28,8 @@
   gap: 6px;
   min-height: 26px;
   min-width: 0;
-  overflow-x: hidden;
-  overflow-y: visible;
+  padding-top: 2px;
+  overflow: visible;
 }
 
 .slide-system-toolbar.is-hidden {
@@ -41,10 +41,19 @@
   align-items: stretch;
   gap: 4px;
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   overflow-x: auto;
   overflow-y: visible;
   white-space: nowrap;
+}
+
+.slide-toolbar-selectors {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: visible;
 }
 
 .slide-toolbar-scrollable-group {
@@ -81,6 +90,7 @@
   align-items: center;
   position: relative;
   width: 214px;
+  flex: 0 0 214px;
   border: 1px solid #88b89b;
   border-radius: 2px;
   background: #eaf7ef;
@@ -134,11 +144,11 @@
   position: absolute;
   left: -1px;
   top: calc(100% + 2px);
-  width: calc(100% + 2px);
+  width: 260px;
   border: 1px solid #88b89b;
   border-radius: 2px;
   background: #ffffff;
-  z-index: 60;
+  z-index: 90;
 }
 
 .slide-rename-dropdown-search-wrap {
@@ -217,6 +227,77 @@
   align-items: center;
   justify-content: center;
   text-align: center;
+}
+
+.slide-toolbar-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.slide-toolbar-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 2px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #202020;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.slide-toolbar-menu-button:hover {
+  background: #f6f6f6;
+}
+
+.slide-toolbar-menu-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.slide-toolbar-menu-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  right: 0;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 2px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #ffffff;
+  z-index: 70;
+}
+
+.slide-toolbar-menu-item {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 7px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: #ffffff;
+  color: #222222;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.slide-toolbar-menu-item:hover {
+  background: #f6f6f6;
+}
+
+.slide-toolbar-menu-item:disabled {
+  cursor: default;
+  opacity: 0.65;
 }
 
 .slide-toolbar-page {

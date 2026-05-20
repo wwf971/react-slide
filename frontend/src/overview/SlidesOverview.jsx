@@ -7,6 +7,7 @@ import SlidesOverviewNameCell from './SlidesOverviewNameCell';
 import './SlidesOverview.css';
 
 const SlidesOverview = observer(({
+  slidesStore,
   slidesGroupStore,
   backendStore = null,
   onEndpointSwitchStart,
@@ -58,6 +59,10 @@ const SlidesOverview = observer(({
   const isNameEditable = !slidesGroupStore.isOverviewLoading
     && !slidesGroupStore.isSubmitting
     && !isEndpointSwitching;
+  const isOrphanSlideCreating = slidesStore?.isPersisting
+    || slidesStore?.isSlideSwitching
+    || slidesGroupStore.isOverviewLoading
+    || isEndpointSwitching;
 
   const renderNameCell = ({ data, rowId, isMissing = false, onRename }) => {
     return (
@@ -81,58 +86,70 @@ const SlidesOverview = observer(({
         />
         <div className="slides-overview-block">
           <div className="slides-overview-title-line">Orphan Slides</div>
-          <FolderView
-            key={`orphan-${slidesGroupStore.overviewDataVersion}`}
-            columns={{
-              name: { data: 'name', align: 'left' },
-              slideId: { data: 'slideId', align: 'left' },
-            }}
-            columnsOrder={['name', 'slideId']}
-            columnsSizeInit={{
-              name: { width: 300, minWidth: 140, resizable: true },
-              slideId: { width: 220, minWidth: 120, resizable: true },
-            }}
-            rows={orphanRows}
-            listOnly={true}
-            bodyHeight={220}
-            showStatusBar={false}
-            loading={slidesGroupStore.isOverviewLoading}
-            loadingMessage="loading orphan slides"
-            getBodyComponent={(columnId) => {
-              if (columnId !== 'name') return null;
-              return ({ data, rowId }) => {
-                const slideId = `${rowId ?? ''}`.trim();
-                const isMissing = orphanMissingSlideIdMap[slideId] === true;
-                return renderNameCell({
-                  data,
-                  rowId: slideId,
-                  isMissing,
-                  onRename: async (nextName) => {
-                    const result = await slidesGroupStore.requestRenameSlide(slideId, nextName);
-                    return {
-                      ok: result?.ok,
-                      message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
-                    };
-                  },
-                });
-              };
-            }}
-            onRowContextMenu={(event, rowId) => {
-              const slideId = `${rowId ?? ''}`.trim();
-              if (!slideId) return;
+          <div
+            className="slides-overview-folder-wrap"
+            onContextMenu={(event) => {
               event.preventDefault();
-              event.stopPropagation();
               setOrphanMenuState({
                 x: event.clientX,
                 y: event.clientY,
-                slideId,
+                slideId: '',
               });
             }}
-            onRowDoubleClick={(slideId) => {
-              if (!slideId) return;
-              navigate(`/slide/${slideId}`);
-            }}
-          />
+          >
+            <FolderView
+              key={`orphan-${slidesGroupStore.overviewDataVersion}`}
+              columns={{
+                name: { data: 'name', align: 'left' },
+                slideId: { data: 'slideId', align: 'left' },
+              }}
+              columnsOrder={['name', 'slideId']}
+              columnsSizeInit={{
+                name: { width: 300, minWidth: 140, resizable: true },
+                slideId: { width: 220, minWidth: 120, resizable: true },
+              }}
+              rows={orphanRows}
+              listOnly={true}
+              bodyHeight={220}
+              showStatusBar={false}
+              loading={slidesGroupStore.isOverviewLoading}
+              loadingMessage="loading orphan slides"
+              getBodyComponent={(columnId) => {
+                if (columnId !== 'name') return null;
+                return ({ data, rowId }) => {
+                  const slideId = `${rowId ?? ''}`.trim();
+                  const isMissing = orphanMissingSlideIdMap[slideId] === true;
+                  return renderNameCell({
+                    data,
+                    rowId: slideId,
+                    isMissing,
+                    onRename: async (nextName) => {
+                      const result = await slidesGroupStore.requestRenameSlide(slideId, nextName);
+                      return {
+                        ok: result?.ok,
+                        message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
+                      };
+                    },
+                  });
+                };
+              }}
+              onRowContextMenu={(event, rowId) => {
+                const slideId = `${rowId ?? ''}`.trim();
+                if (!slideId) return;
+                event.preventDefault();
+                event.stopPropagation();
+                setOrphanMenuState({
+                  x: event.clientX,
+                  y: event.clientY,
+                  slideId,
+                });
+              }}
+              onRowDoubleClick={(slideId) => {
+                if (!slideId) return;
+                navigate(`/slide/${slideId}`);
+              }}
+            />
+          </div>
         </div>
 
         <div className="slides-overview-block">
@@ -270,16 +287,26 @@ const SlidesOverview = observer(({
       {orphanMenuState ? (
         <Menu
           items={[
-            { type: 'item', name: 'Delete', data: { action: 'delete-orphan-slide' } },
+            { type: 'item', name: 'New Orphan Slide', data: { action: 'create-orphan-slide' } },
+            ...(orphanMenuState.slideId
+              ? [{ type: 'item', name: 'Delete', data: { action: 'delete-orphan-slide' } }]
+              : []),
           ]}
           position={{ x: orphanMenuState.x, y: orphanMenuState.y }}
           onClose={() => setOrphanMenuState(null)}
           onItemClick={async (item) => {
-            if (item?.data?.action !== 'delete-orphan-slide') return;
+            const action = item?.data?.action;
             const slideId = `${orphanMenuState?.slideId ?? ''}`.trim();
             setOrphanMenuState(null);
-            if (!slideId) return;
-            await slidesGroupStore.requestDeleteSlide(slideId);
+            if (action === 'create-orphan-slide') {
+              if (isOrphanSlideCreating) return;
+              const result = await slidesStore?.requestCreateSlide?.('Untitled');
+              if (result?.ok) await slidesGroupStore.requestLoadOverview();
+              return;
+            }
+            if (action === 'delete-orphan-slide' && slideId) {
+              await slidesGroupStore.requestDeleteSlide(slideId);
+            }
           }}
         />
       ) : null}

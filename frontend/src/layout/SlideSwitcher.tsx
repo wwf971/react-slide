@@ -130,9 +130,9 @@ const SlideSwitcher = ({
       <button
         className="slide-rename-dropdown-btn"
         type="button"
-        disabled={isSettingBusy || slideItems.length === 0}
+        disabled={isSettingBusy}
         onClick={() => {
-          if (isSettingBusy || slideItems.length === 0) return;
+          if (isSettingBusy) return;
           setIsSlideDropdownOpen((isOpen) => {
             const isNextOpen = !isOpen;
             if (isNextOpen) setSlideSearchText('');

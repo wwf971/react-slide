@@ -9,9 +9,10 @@ const Slides = observer(({
   store,
   backendStore,
   getComp,
-  requestedSlideId = '',
+  slideIdRequested = '',
   onCurrentSlideIdChange,
   onRequestOpenGroupView,
+  onRequestOpenOverview,
   onEndpointSwitchStart,
 }: any) => {
   const currentPage = store.getCurrentPageData() ?? store.getFirstPageData();
@@ -21,7 +22,7 @@ const Slides = observer(({
   const slideCurrentId = store.slideCurrentId ?? '';
   const [isFullWindow, setIsFullWindow] = useState(false);
   const [ownerGroupIdBySlideId, setOwnerGroupIdBySlideId] = useState({});
-  const requestedSlideIdNormalized = `${requestedSlideId ?? ''}`.trim();
+  const requestedSlideIdNormalized = `${slideIdRequested ?? ''}`.trim();
   const isRequestedSlideIdMissing = Boolean(requestedSlideIdNormalized)
     && !isSlidesInitializing
     && (slideItems ?? []).length > 0
@@ -60,16 +61,16 @@ const Slides = observer(({
     if (!hasRequestedSlide) return;
     if (`${slideCurrentId ?? ''}`.trim() === nextSlideId) return;
     store.requestSwitchSlide(nextSlideId);
-  }, [requestedSlideId, slideItems, store]);
+  }, [slideIdRequested, slideItems, store]);
 
   useEffect(() => {
     if (!onCurrentSlideIdChange) return;
     const nextSlideId = `${slideCurrentId ?? ''}`.trim();
     if (!nextSlideId) return;
-    const requestedId = `${requestedSlideId ?? ''}`.trim();
+    const requestedId = `${slideIdRequested ?? ''}`.trim();
     if (requestedId && requestedId !== nextSlideId && !isRequestedSlideIdMissing) return;
     onCurrentSlideIdChange(nextSlideId);
-  }, [slideCurrentId, onCurrentSlideIdChange, requestedSlideId, isRequestedSlideIdMissing]);
+  }, [slideCurrentId, onCurrentSlideIdChange, slideIdRequested, isRequestedSlideIdMissing]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -127,13 +128,20 @@ const Slides = observer(({
           onEndpointSwitchStart={onEndpointSwitchStart}
           config={{
             isHidden: isFullWindow,
+            isSlideNavigationButtonVisible: true,
             isViewInsideGroupButtonVisible: Boolean(currentGroupId),
           }}
           onEvent={async (event) => {
-            if (event.type !== 'viewInsideGroup') return false;
-            if (!currentGroupId || !slideCurrentId) return true;
-            onRequestOpenGroupView?.(currentGroupId, slideCurrentId);
-            return true;
+            if (event.type === 'viewInsideGroup') {
+              if (!currentGroupId || !slideCurrentId) return true;
+              onRequestOpenGroupView?.(currentGroupId, slideCurrentId);
+              return true;
+            }
+            if (event.type === 'viewOverview') {
+              onRequestOpenOverview?.();
+              return true;
+            }
+            return false;
           }}
         />
         <div className="slide-system-canvas-wrap">

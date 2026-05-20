@@ -239,13 +239,19 @@
 }
 
 .group-view-open-slide-btn {
-  height: 22px;
+  min-height: 22px;
   border: 1px solid #c7c7c7;
   border-radius: 2px;
   background: #ffffff;
   font-size: 12px;
+  line-height: 1.2;
   cursor: pointer;
-  padding: 0 8px;
+  padding: 2px 8px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .group-view-slide-body {

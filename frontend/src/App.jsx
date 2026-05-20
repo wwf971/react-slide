@@ -49,7 +49,7 @@ const SlideRoutePage = observer(({
       store={slidesStore}
       backendStore={backendStore}
       getComp={getComp}
-      requestedSlideId={routeSlideId}
+      slideIdRequested={routeSlideId}
       onEndpointSwitchStart={onEndpointSwitchStart}
       onRequestOpenGroupView={(groupId, slideId) => {
         const safeGroupId = `${groupId ?? ''}`.trim();
@@ -58,6 +58,9 @@ const SlideRoutePage = observer(({
         navigate(
           `/group/${encodeURIComponent(safeGroupId)}?selectedSlide=${encodeURIComponent(safeSlideId)}`,
         );
+      }}
+      onRequestOpenOverview={() => {
+        navigate('/overview');
       }}
       onCurrentSlideIdChange={(nextSlideId) => {
         const nextRouteSlideId = `${nextSlideId ?? ''}`.trim();
@@ -83,6 +86,7 @@ const SlideRoutes = ({
           path="/overview"
           element={(
             <SlidesOverview
+              slidesStore={slidesStore}
               slidesGroupStore={slidesGroupStore}
               backendStore={backendStore}
               onEndpointSwitchStart={onEndpointSwitchStart}

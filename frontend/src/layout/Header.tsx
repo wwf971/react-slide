@@ -9,6 +9,7 @@ export type HeaderEvent =
   | { type: 'renameSlide'; name: string }
   | { type: 'createSlide' }
   | { type: 'deleteSlide' }
+  | { type: 'viewOverview' }
   | { type: 'viewInsideGroup' }
   | { type: 'toggleStackMode' }
   | { type: 'saveCurrentPage' };
@@ -32,8 +33,8 @@ export type HeaderConfig = {
   isPageArrowButtonsVisible?: boolean;
   isSaveButtonVisible?: boolean;
   isStackModeToggleVisible?: boolean;
-  /** When stack toggle is visible, toggles the nav button label. */
   isStackMode?: boolean;
+  isSlideNavigationButtonVisible?: boolean;
   isViewInsideGroupButtonVisible?: boolean;
 };
 
@@ -68,6 +69,7 @@ const defaultConfig: Required<
     | 'isSaveButtonVisible'
     | 'isStackModeToggleVisible'
     | 'isStackMode'
+    | 'isSlideNavigationButtonVisible'
     | 'isViewInsideGroupButtonVisible'
   >
 > = {
@@ -81,6 +83,7 @@ const defaultConfig: Required<
   isSaveButtonVisible: false,
   isStackModeToggleVisible: false,
   isStackMode: false,
+  isSlideNavigationButtonVisible: false,
   isViewInsideGroupButtonVisible: false,
 };
 
@@ -101,6 +104,10 @@ const Header = observer(
     onEvent?: (event: HeaderEvent) => boolean | void | Promise<boolean | void>;
   }) => {
     const switchRequestTokenRef = React.useRef(0);
+    const slideNavMenuRef = React.useRef<HTMLDivElement | null>(null);
+    const dbActionMenuRef = React.useRef<HTMLDivElement | null>(null);
+    const [isSlideNavMenuOpen, setIsSlideNavMenuOpen] = React.useState(false);
+    const [isDbActionMenuOpen, setIsDbActionMenuOpen] = React.useState(false);
     const mergedConfig = { ...defaultConfig, ...config };
     const isPersisting = slidesStore.isPersisting ?? false;
     const isSlideDeleting =
@@ -133,6 +140,24 @@ const Header = observer(
 
     const persistFailureMessage =
       `${data.statusMessage ?? slidesStore.persistFailureMessage ?? ''}`.trim();
+
+    React.useEffect(() => {
+      const handleDocumentMouseDown = (event: MouseEvent) => {
+        const target = event.target as Node;
+        const slideNavMenuElement = slideNavMenuRef.current;
+        const dbActionMenuElement = dbActionMenuRef.current;
+        if (slideNavMenuElement && !slideNavMenuElement.contains(target)) {
+          setIsSlideNavMenuOpen(false);
+        }
+        if (dbActionMenuElement && !dbActionMenuElement.contains(target)) {
+          setIsDbActionMenuOpen(false);
+        }
+      };
+      document.addEventListener('mousedown', handleDocumentMouseDown, true);
+      return () => {
+        document.removeEventListener('mousedown', handleDocumentMouseDown, true);
+      };
+    }, []);
 
     const runEvent = async (event: HeaderEvent, fallback: () => void | Promise<void>) => {
       const handled = await onEvent?.(event);
@@ -169,122 +194,174 @@ const Header = observer(
 
     return (
       <div className={`slide-system-toolbar ${mergedConfig.isHidden ? 'is-hidden' : ''}`}>
-        <div
-          className="slide-toolbar-settings slide-toolbar-scrollable-group"
-          onWheel={handleHorizontalWheelScroll}
-        >
-          {mergedConfig.isDatabaseSwitcherVisible && backendStore ? (
-            <DbSwitcher
-              data={{
-                items: backendStore.databaseItems ?? [],
-                currentId: backendStore.endpointKeyCurrent ?? '',
-                loadFailureMessage: backendStore.loadFailureMessage ?? '',
+        {(mergedConfig.isDatabaseSwitcherVisible && backendStore) || mergedConfig.isSlideSwitcherVisible ? (
+          <div className="slide-toolbar-selectors">
+            {mergedConfig.isDatabaseSwitcherVisible && backendStore ? (
+              <DbSwitcher
+                data={{
+                  items: backendStore.databaseItems ?? [],
+                  currentId: backendStore.endpointKeyCurrent ?? '',
+                  loadFailureMessage: backendStore.loadFailureMessage ?? '',
+                }}
+                config={{
+                  isSettingBusy,
+                  isLoading: backendStore.isDatabaseLoading ?? false,
+                  isSwitching: backendStore.isDatabaseSwitching ?? false,
+                  isTesting: backendStore.isDatabaseTesting ?? false,
+                  testingId: backendStore.testingDatabaseKey ?? '',
+                }}
+                onEvent={(eventType, eventData) => {
+                  if (eventType === 'refresh') {
+                    backendStore.requestLoadDatabases?.();
+                    return;
+                  }
+                  if (eventType === 'switch') {
+                    void handleSwitchDatabase(`${eventData?.id ?? ''}`);
+                    return;
+                  }
+                  if (eventType === 'test') {
+                    backendStore.requestTestDatabase?.(`${eventData?.id ?? ''}`);
+                  }
+                }}
+              />
+            ) : null}
+            {mergedConfig.isSlideSwitcherVisible ? (
+              <SlideSwitcher
+                slideItems={slideItems}
+                slideCurrentId={slideCurrentId}
+                slideCurrentName={slideCurrentName}
+                isSettingBusy={isSettingBusy}
+                onSwitchSlide={(slideId: string) => {
+                  void runEvent({ type: 'switchSlide', slideId }, async () => {
+                    await slidesStore.requestSwitchSlide(slideId);
+                  });
+                }}
+                onRenameSlide={(nextName: string) => {
+                  void runEvent({ type: 'renameSlide', name: nextName }, async () => {
+                    await slidesStore.requestRenameCurrentSlide(nextName);
+                  });
+                }}
+              />
+            ) : null}
+          </div>
+        ) : null}
+        {mergedConfig.isSlideNavigationButtonVisible ? (
+          <div className="slide-toolbar-menu" ref={slideNavMenuRef}>
+            <button
+              className="slide-toolbar-menu-button"
+              type="button"
+              disabled={isSettingBusy || isPersisting}
+              onClick={() => {
+                setIsSlideNavMenuOpen((isOpen) => !isOpen);
               }}
-              config={{
-                isSettingBusy,
-                isLoading: backendStore.isDatabaseLoading ?? false,
-                isSwitching: backendStore.isDatabaseSwitching ?? false,
-                isTesting: backendStore.isDatabaseTesting ?? false,
-                testingId: backendStore.testingDatabaseKey ?? '',
-              }}
-              onEvent={(eventType, eventData) => {
-                if (eventType === 'refresh') {
-                  backendStore.requestLoadDatabases?.();
-                  return;
-                }
-                if (eventType === 'switch') {
-                  void handleSwitchDatabase(`${eventData?.id ?? ''}`);
-                  return;
-                }
-                if (eventType === 'test') {
-                  backendStore.requestTestDatabase?.(`${eventData?.id ?? ''}`);
-                }
-              }}
-            />
-          ) : null}
-          {mergedConfig.isSlideSwitcherVisible ? (
-            <SlideSwitcher
-              slideItems={slideItems}
-              slideCurrentId={slideCurrentId}
-              slideCurrentName={slideCurrentName}
-              isSettingBusy={isSettingBusy}
-              onSwitchSlide={(slideId: string) => {
-                void runEvent({ type: 'switchSlide', slideId }, async () => {
-                  await slidesStore.requestSwitchSlide(slideId);
-                });
-              }}
-              onRenameSlide={(nextName: string) => {
-                void runEvent({ type: 'renameSlide', name: nextName }, async () => {
-                  await slidesStore.requestRenameCurrentSlide(nextName);
-                });
-              }}
-            />
-          ) : null}
-          {mergedConfig.isSlideActionButtonsVisible ? (
-            <>
-              {mergedConfig.isViewInsideGroupButtonVisible ? (
+            >
+              Navigate
+            </button>
+            {isSlideNavMenuOpen ? (
+              <div className="slide-toolbar-menu-list">
+                {mergedConfig.isViewInsideGroupButtonVisible ? (
+                  <button
+                    className="slide-toolbar-menu-item"
+                    type="button"
+                    disabled={isSettingBusy || isPersisting || !slideCurrentId}
+                    onClick={() => {
+                      setIsSlideNavMenuOpen(false);
+                      void runEvent({ type: 'viewInsideGroup' }, async () => {});
+                    }}
+                  >
+                    Open Group View
+                  </button>
+                ) : null}
+                <button
+                  className="slide-toolbar-menu-item"
+                  type="button"
+                  disabled={isSettingBusy || isPersisting}
+                  onClick={() => {
+                    setIsSlideNavMenuOpen(false);
+                    void runEvent({ type: 'viewOverview' }, async () => {});
+                  }}
+                >
+                  Open Overview
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {(mergedConfig.isSlideActionButtonsVisible || mergedConfig.isDatabaseActionButtonsVisible) ? (
+          <div
+            className="slide-toolbar-settings slide-toolbar-scrollable-group"
+            onWheel={handleHorizontalWheelScroll}
+          >
+            {mergedConfig.isSlideActionButtonsVisible ? (
+              <>
                 <button
                   className="slide-toolbar-btn"
                   type="button"
-                  disabled={isSettingBusy || isPersisting || !slideCurrentId}
+                  disabled={isSettingBusy}
                   onClick={() => {
-                    void runEvent({ type: 'viewInsideGroup' }, async () => {});
+                    void runEvent({ type: 'createSlide' }, async () => {
+                      await slidesStore.requestCreateSlide('Untitled');
+                    });
                   }}
                 >
-                  View inside Group
+                  New
                 </button>
-              ) : null}
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={isSettingBusy}
-                onClick={() => {
-                  void runEvent({ type: 'createSlide' }, async () => {
-                    await slidesStore.requestCreateSlide('Untitled');
-                  });
-                }}
-              >
-                New
-              </button>
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={isSettingBusy || isPersisting || isSlideDeleting || !slideCurrentId}
-                onClick={() => {
-                  void runEvent({ type: 'deleteSlide' }, async () => {
-                    await slidesStore.requestDeleteCurrentSlide();
-                  });
-                }}
-              >
-                Delete Slide
-              </button>
-            </>
-          ) : null}
-          {mergedConfig.isDatabaseActionButtonsVisible ? (
-            <>
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={isSettingBusy}
-                onClick={() => {
-                  slidesStore.requestReinitDatabase?.();
-                }}
-              >
-                Reinit DB
-              </button>
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={isSettingBusy}
-                onClick={() => {
-                  slidesStore.requestDumpDatabaseSnapshot?.();
-                }}
-              >
-                Dump DB
-              </button>
-            </>
-          ) : null}
-        </div>
+                <button
+                  className="slide-toolbar-btn"
+                  type="button"
+                  disabled={isSettingBusy || isPersisting || isSlideDeleting || !slideCurrentId}
+                  onClick={() => {
+                    void runEvent({ type: 'deleteSlide' }, async () => {
+                      await slidesStore.requestDeleteCurrentSlide();
+                    });
+                  }}
+                >
+                  Delete Slide
+                </button>
+              </>
+            ) : null}
+            {mergedConfig.isDatabaseActionButtonsVisible ? (
+              <div className="slide-toolbar-menu" ref={dbActionMenuRef}>
+                <button
+                  className="slide-toolbar-menu-button"
+                  type="button"
+                  disabled={isSettingBusy}
+                  onClick={() => {
+                    setIsDbActionMenuOpen((isOpen) => !isOpen);
+                  }}
+                >
+                  DB
+                </button>
+                {isDbActionMenuOpen ? (
+                  <div className="slide-toolbar-menu-list">
+                    <button
+                      className="slide-toolbar-menu-item"
+                      type="button"
+                      disabled={isSettingBusy}
+                      onClick={() => {
+                        setIsDbActionMenuOpen(false);
+                        slidesStore.requestReinitDatabase?.();
+                      }}
+                    >
+                      Reinit DB
+                    </button>
+                    <button
+                      className="slide-toolbar-menu-item"
+                      type="button"
+                      disabled={isSettingBusy}
+                      onClick={() => {
+                        setIsDbActionMenuOpen(false);
+                        slidesStore.requestDumpDatabaseSnapshot?.();
+                      }}
+                    >
+                      Dump DB
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="slide-toolbar-page">
           <span className="slide-toolbar-page-value">{currentPageIndex}</span>
           <span className="slide-toolbar-page-value">{isCurrentPageDirty ? '*' : ''}</span>

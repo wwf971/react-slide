@@ -66,6 +66,32 @@ class AuthStore {
     this.saveToken('');
   }
 
+  clearSessionAfterLogout(message = 'Logged out') {
+    runInAction(() => {
+      this.isLoggedIn = false;
+      this.token = '';
+      this.password = '';
+      this.message = message;
+      this.messageType = 'success';
+      this.isLoading = false;
+    });
+    this.saveToken('');
+  }
+
+  async logoutWithApi() {
+    if (this.isLoading) return { code: -1 };
+    runInAction(() => {
+      this.isLoading = true;
+      this.message = '';
+    });
+    const result = await requestJsonWithAuth('/api/login/logout', {
+      method: 'POST',
+    });
+    const message = toText(result.body?.message) || 'Logged out';
+    this.clearSessionAfterLogout(message);
+    return { code: result.body?.code ?? -1 };
+  }
+
   async initialize() {
     if (this.isInitializing) return;
     runInAction(() => {
