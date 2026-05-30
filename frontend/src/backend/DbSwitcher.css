@@ -1,5 +1,7 @@
 .db-switch-root {
   display: inline-flex;
+  align-items: center;
+  gap: 4px;
   position: relative;
   flex: 0 0 auto;
 }
@@ -43,6 +45,22 @@
 .db-switch-current-icon {
   display: inline-flex;
   align-items: center;
+}
+
+.db-switch-inline-error {
+  max-width: 220px;
+  min-height: 18px;
+  border: 1px solid #f0d4d4;
+  border-radius: 2px;
+  background: #fff5f5;
+  color: #c22b2b;
+  font-size: 11px;
+  line-height: 16px;
+  padding: 0 5px;
+  font-family: sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .db-switch-dropdown {

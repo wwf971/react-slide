@@ -1,6 +1,38 @@
 import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useSlidesStore } from '../store/slidesStore';
+import {
+  getMissingTextAlignmentData,
+  getTextAlignmentMenuItems,
+  handleTextAlignmentMenuItem,
+  normalizeHorizontalAlign,
+  normalizeVerticalAlign,
+} from './CompTextUtils';
+
+const getTextOffsetFromPoint = (rootElement, point, fallbackOffset) => {
+  if (!rootElement || !point) return fallbackOffset;
+  const documentValue: any = rootElement.ownerDocument ?? document;
+  let offsetNode: any = null;
+  let offset = 0;
+  if (documentValue.caretPositionFromPoint) {
+    const position = documentValue.caretPositionFromPoint(point.x, point.y);
+    offsetNode = position?.offsetNode ?? null;
+    offset = Number(position?.offset ?? 0);
+  } else if (documentValue.caretRangeFromPoint) {
+    const range = documentValue.caretRangeFromPoint(point.x, point.y);
+    offsetNode = range?.startContainer ?? null;
+    offset = Number(range?.startOffset ?? 0);
+  }
+  if (!offsetNode || !rootElement.contains(offsetNode)) return fallbackOffset;
+  try {
+    const range = documentValue.createRange();
+    range.selectNodeContents(rootElement);
+    range.setEnd(offsetNode, offset);
+    return Math.max(0, Math.min(range.toString().length, rootElement.textContent?.length ?? 0));
+  } catch {
+    return fallbackOffset;
+  }
+};
 
 const CompTextMultline = observer(
   ({ data, containerId, compId, requestContainerMoveByPoint, isReadOnly }: any) => {
@@ -8,7 +40,10 @@ const CompTextMultline = observer(
   const rootRef = useRef<any>(null);
   const contentRef = useRef<any>(null);
   const dragStateRef = useRef<any>(null);
+  const pendingCaretOffsetRef = useRef<number | null>(null);
   const textValue = data?.text ?? '';
+  const textHorizontalAlign = normalizeHorizontalAlign(data?.textHorizontalAlign);
+  const textVerticalAlign = normalizeVerticalAlign(data?.textVerticalAlign);
   const isSelected = store.selectedContainerId === containerId;
   const isEditing = store.isCompEditing(compId);
   const containerSize = store.getContainerSize(containerId);
@@ -29,6 +64,13 @@ const CompTextMultline = observer(
     if (!rootElement) return;
     rootElement.style.setProperty('--slide-comp-font-size', `${fontPixelSize}px`);
   }, [fontPixelSize]);
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    const nextCompData = getMissingTextAlignmentData(data);
+    if (Object.keys(nextCompData).length === 0) return;
+    store.requestContainerCompDataUpdate(containerId, nextCompData);
+  }, [containerId, data?.textHorizontalAlign, data?.textVerticalAlign, isReadOnly, store]);
 
   const requestFit = () => {
     const element = contentRef.current;
@@ -92,6 +134,10 @@ const CompTextMultline = observer(
     const element = contentRef.current;
     if (!element) return;
     element.focus();
+    const offset = pendingCaretOffsetRef.current;
+    pendingCaretOffsetRef.current = null;
+    const safeOffset = Math.max(0, Math.min(offset ?? textValue.length, textValue.length));
+    element.setSelectionRange?.(safeOffset, safeOffset);
   }, [isEditing]);
 
   useEffect(() => {
@@ -112,7 +158,7 @@ const CompTextMultline = observer(
       {isEditing ? (
         <textarea
           ref={contentRef}
-          className="slide-textarea"
+          className={`slide-textarea align-x-${textHorizontalAlign} align-y-${textVerticalAlign}`}
           readOnly={isReadOnly}
           value={textValue}
           onChange={(event) => {
@@ -125,7 +171,7 @@ const CompTextMultline = observer(
       ) : (
         <div
           ref={contentRef}
-          className="slide-text-view"
+          className={`slide-text-view align-x-${textHorizontalAlign} align-y-${textVerticalAlign}`}
           onPointerDown={(event) => {
             if (isReadOnly) return;
             if (event.button !== 0) return;
@@ -150,8 +196,13 @@ const CompTextMultline = observer(
             window.addEventListener('pointermove', onPointerMove);
             window.addEventListener('pointerup', onPointerUp);
           }}
-          onDoubleClick={() => {
+          onDoubleClick={(event) => {
             if (isReadOnly) return;
+            pendingCaretOffsetRef.current = getTextOffsetFromPoint(
+              event.currentTarget,
+              { x: event.clientX, y: event.clientY },
+              textValue.length,
+            );
             store.setSelectedContainer(containerId);
             if (compId) {
               store.setEditingComp(compId);
@@ -160,12 +211,18 @@ const CompTextMultline = observer(
             }
           }}
         >
-          {textValue}
+          <div className="slide-text-view-content">{textValue}</div>
         </div>
       )}
     </div>
   );
   },
 );
+
+(CompTextMultline as any).getMenuItems = ({ data }: any) => {
+  return getTextAlignmentMenuItems(data);
+};
+
+(CompTextMultline as any).handleMenuItem = handleTextAlignmentMenuItem;
 
 export default CompTextMultline;

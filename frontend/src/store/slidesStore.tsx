@@ -29,6 +29,8 @@ const createEmptyDirtyState = () => {
   };
 };
 
+const PAGE_DATA_DIRTY_KEY = '__page_data__';
+
 const collectDirtyIds = (dirtyMap) => {
   return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);
 };
@@ -312,15 +314,19 @@ class SlidesStore {
     pageIds.forEach((pageId, pageIndex) => {
       const pageNodeId = toSlideTreeNodeId('page', pageId);
       const pageData = this.getPageData(pageId);
+      const pageName = `${pageData?.name ?? ''}`.trim();
+      const pageText = pageName ? `Page ${pageIndex + 1}(${pageName})` : `Page ${pageIndex + 1}`;
       const containerIds = (pageData?.containerIds ?? []).filter(Boolean);
       const containerNodeIds = containerIds.map((containerId) => toSlideTreeNodeId('container', containerId));
       parentItemIdById[pageNodeId] = slideNodeId;
       itemDataById[pageNodeId] = {
         id: pageNodeId,
-        text: `Page ${pageIndex + 1}`,
+        text: pageText,
         kind: 'page',
         slideId,
         pageId,
+        pageIndex: pageIndex + 1,
+        pageName,
         containerId: '',
         compId: '',
         resourceId: '',
@@ -411,6 +417,8 @@ class SlidesStore {
         initialPixelSize: { pixelX: 200, pixelY: 24 },
         fontScale: 1,
         fontScaleUnit: '1/100 slide width',
+        textHorizontalAlign: 'left',
+        textVerticalAlign: 'top',
       };
     }
     if (compName === 'CompTextMultline') {
@@ -419,6 +427,8 @@ class SlidesStore {
         initialPixelSize: { pixelX: 220, pixelY: 80 },
         fontScale: 1,
         fontScaleUnit: '1/100 slide width',
+        textHorizontalAlign: 'left',
+        textVerticalAlign: 'top',
       };
     }
     if (compName === 'CompCode') {
@@ -1005,6 +1015,12 @@ class SlidesStore {
     dirtyState.updatedContainerIds.__metadata__ = true;
   }
 
+  markPageDataDirty(pageId) {
+    if (!pageId) return;
+    const dirtyState = this.ensurePageDirtyState(pageId);
+    dirtyState.updatedContainerIds[PAGE_DATA_DIRTY_KEY] = true;
+  }
+
   isPageDirty(pageId) {
     return hasDirtyState(this.dirtyPageStateById[pageId]);
   }
@@ -1281,6 +1297,45 @@ class SlidesStore {
     if (!this.pageDataById[pageId]) return;
     this.metadata.currentPageId = pageId;
     this.isSlideSurfaceSelected = false;
+  }
+
+  async requestRenamePage(pageId, name) {
+    if (this.isPersisting || this.isSlideSwitching || this.isPageDeleting) {
+      return { ok: false, message: 'Cannot rename page while another save is running' };
+    }
+    const pageData = this.getPageData(pageId);
+    if (!pageData) return { ok: false, message: 'Page not found' };
+    const nextName = `${name ?? ''}`.trim();
+    const prevName = `${pageData?.name ?? ''}`.trim();
+    if (nextName === prevName) {
+      if (!this.isPageDirty(pageId)) return { ok: true };
+      const saveResult = await this.requestPersistDirtyPages();
+      if (!saveResult?.ok) {
+        return {
+          ok: false,
+          message: saveResult?.message ?? 'Failed to rename page',
+        };
+      }
+      return { ok: true };
+    }
+    const nextPageData = {
+      ...pageData,
+    };
+    if (nextName) {
+      nextPageData.name = nextName;
+    } else {
+      delete nextPageData.name;
+    }
+    this.pageDataById[pageId] = nextPageData;
+    this.markPageDataDirty(pageId);
+    const saveResult = await this.requestPersistDirtyPages();
+    if (!saveResult?.ok) {
+      return {
+        ok: false,
+        message: saveResult?.message ?? 'Failed to rename page',
+      };
+    }
+    return { ok: true };
   }
 
   setSelectedContainer(containerId) {

@@ -18,6 +18,8 @@ const resolveTitleCompScript = (scriptInput) => {
       initialPixelSize: { pixelX: 600, pixelY: 72 },
       fontScale: 5,
       fontScaleUnit: '1/100 slide width',
+      textHorizontalAlign: 'left',
+      textVerticalAlign: 'top',
     },
     options: {
       placement: 'top-left',

@@ -833,7 +833,7 @@ const applyDirtyPatchToSlideData = (previousData, payload, dirtyPageStateById) =
     if (!runtimePageData) return;
     nextData.pageDataById[pageId] = cloneData(runtimePageData);
     Object.keys(dirtyState.updatedContainerIds ?? {}).filter((id) => dirtyState.updatedContainerIds[id]).forEach((containerId) => {
-      if (containerId === '__metadata__') return;
+      if (`${containerId ?? ''}`.startsWith('__')) return;
       if (!runtimeContainerDataById[containerId]) return;
       nextData.containerDataById[containerId] = cloneData(runtimeContainerDataById[containerId]);
       delete nextData.containerDataById[containerId]?.containerSize;

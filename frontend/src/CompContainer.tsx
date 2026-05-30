@@ -450,6 +450,17 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
     const fontScaleValue = Number.isFinite(fontScaleValueRaw) ? fontScaleValueRaw : 1;
     const safeFontScale = clamp(fontScaleValue, FONT_SCALE_MIN, FONT_SCALE_MAX);
     const fontScaleUnit = compData?.compData?.fontScaleUnit ?? '1/100 slide width';
+    const getComponentMenuItems = (Comp as any)?.getMenuItems;
+    const componentMenuItems =
+      typeof getComponentMenuItems === 'function'
+        ? getComponentMenuItems({
+            data: compData?.compData ?? {},
+            compData,
+            containerData,
+            containerId,
+            store,
+          })
+        : [];
     const requestSetFontScale = (nextFontScale) => {
       store.requestContainerCompDataUpdate(containerId, {
         fontScale: clamp(nextFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX),
@@ -493,59 +504,66 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
           },
         ],
       },
-      {
-        id: 'font',
-        label: 'Font',
-        isDisabled: !isFontAdjustableComp,
-        children: [
-          {
-            id: 'font-control',
-            label: (
-              <FontScaleControl
-                fontScaleValue={safeFontScale}
-                onChangeFontScale={requestSetFontScale}
-              />
-            ),
-            data: { action: 'font-control' },
-          },
-          {
-            id: 'font-decrease',
-            label: 'Decrease',
-            data: { action: 'font-decrease' },
-          },
-          {
-            id: 'font-increase',
-            label: 'Increase',
-            data: { action: 'font-increase' },
-          },
-          {
-            id: 'font-scale-0-8',
-            label: '0.8',
-            data: { action: 'font-set', fontScale: 0.8 },
-          },
-          {
-            id: 'font-scale-1',
-            label: '1.0',
-            data: { action: 'font-set', fontScale: 1.0 },
-          },
-          {
-            id: 'font-scale-1-2',
-            label: '1.2',
-            data: { action: 'font-set', fontScale: 1.2 },
-          },
-          {
-            id: 'font-scale-1-5',
-            label: '1.5',
-            data: { action: 'font-set', fontScale: 1.5 },
-          },
-        ],
-      },
-      {
-        id: 'url-edit',
-        label: 'Edit URL',
-        data: { action: 'url-edit' },
-        isDisabled: !isUrlComp,
-      },
+      ...(isFontAdjustableComp
+        ? [
+            {
+              id: 'font',
+              label: 'Font',
+              children: [
+                {
+                  id: 'font-control',
+                  label: (
+                    <FontScaleControl
+                      fontScaleValue={safeFontScale}
+                      onChangeFontScale={requestSetFontScale}
+                    />
+                  ),
+                  data: { action: 'font-control' },
+                },
+                {
+                  id: 'font-decrease',
+                  label: 'Decrease',
+                  data: { action: 'font-decrease' },
+                },
+                {
+                  id: 'font-increase',
+                  label: 'Increase',
+                  data: { action: 'font-increase' },
+                },
+                {
+                  id: 'font-scale-0-8',
+                  label: '0.8',
+                  data: { action: 'font-set', fontScale: 0.8 },
+                },
+                {
+                  id: 'font-scale-1',
+                  label: '1.0',
+                  data: { action: 'font-set', fontScale: 1.0 },
+                },
+                {
+                  id: 'font-scale-1-2',
+                  label: '1.2',
+                  data: { action: 'font-set', fontScale: 1.2 },
+                },
+                {
+                  id: 'font-scale-1-5',
+                  label: '1.5',
+                  data: { action: 'font-set', fontScale: 1.5 },
+                },
+              ],
+            },
+          ]
+        : []),
+      ...(Array.isArray(componentMenuItems) ? componentMenuItems : []),
+      ...(isUrlComp
+        ? [
+            {
+              id: 'url-edit',
+              label: 'Edit URL',
+              data: { action: 'url-edit' },
+            },
+          ]
+        : []),
       {
         id: 'copy-container',
         label: 'Copy',
@@ -562,14 +580,17 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
         label: 'Delete',
         data: { action: 'delete-container' },
       },
-      {
-        id: 'iframe-cancel',
-        label: 'Cancel IFrame',
-        data: { action: 'iframe-cancel' },
-        isDisabled: !isIFrameComp,
-      },
+      ...(isIFrameComp
+        ? [
+            {
+              id: 'iframe-cancel',
+              label: 'Cancel IFrame',
+              data: { action: 'iframe-cancel' },
+            },
+          ]
+        : []),
     ];
-  }, [store, compData, containerId, isPasteEnabled]);
+  }, [Comp, store, compData, containerData, containerId, isPasteEnabled]);
 
   return (
     <div
@@ -714,6 +735,18 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
                 fontScale: clamp(nextFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX),
                 fontScaleUnit: '1/100 slide width',
               });
+            }
+            const handleComponentMenuItem = (Comp as any)?.handleMenuItem;
+            if (typeof handleComponentMenuItem === 'function') {
+              const isHandled = handleComponentMenuItem({
+                item,
+                data: compData?.compData ?? {},
+                compData,
+                containerData,
+                containerId,
+                store,
+              });
+              if (isHandled) return;
             }
           }}
         />

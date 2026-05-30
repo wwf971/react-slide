@@ -14,7 +14,7 @@ const DbSwitcher = ({
 }: {
   data?: any;
   config?: any;
-  onEvent?: (eventType: string, eventData?: any) => void | Promise<void>;
+  onEvent?: (eventType: string, eventData?: any) => any | Promise<any>;
 }) => {
   const items = data?.items ?? [];
   const currentId = `${data?.currentId ?? ''}`.trim();
@@ -113,7 +113,7 @@ const DbSwitcher = ({
   }, [isDropdownOpen]);
 
   const emitEvent = (eventType: string, eventData: any = {}) => {
-    onEvent?.(eventType, eventData);
+    return onEvent?.(eventType, eventData);
   };
 
   return (
@@ -141,6 +141,11 @@ const DbSwitcher = ({
         <span className={`db-switch-status-dot ${currentItem?.isInError ? 'is-error' : ''}`} />
         <span className="db-switch-current-icon">{renderIcon(DownIcon, 10, 10)}</span>
       </button>
+      {loadFailureMessage ? (
+        <div className="db-switch-inline-error" title={loadFailureMessage}>
+          {loadFailureMessage}
+        </div>
+      ) : null}
       {isDropdownOpen ? createPortal((
         <div
           ref={dropdownRef}
@@ -214,7 +219,8 @@ const DbSwitcher = ({
                       }}
                       onEvent={(eventType, eventData) => {
                         if (eventType === 'action' && eventData?.actionId === 'switch') {
-                          void Promise.resolve(emitEvent('switch', { id: entry.key })).then(() => {
+                          void Promise.resolve(emitEvent('switch', { id: entry.key })).then((result: any) => {
+                            if (result?.ok === false) return;
                             setIsDropdownOpen(false);
                           });
                           return;

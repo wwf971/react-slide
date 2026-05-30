@@ -430,7 +430,7 @@ class SlidesPersistStore {
       persistedData.pageDataById[pageId] = cloneData(runtimePageData);
 
       collectDirtyIds(dirtyState.updatedContainerIds).forEach((containerId) => {
-        if (containerId === '__metadata__') return;
+        if (`${containerId ?? ''}`.startsWith('__')) return;
         const containerData = runtimeContainerDataById[containerId];
         if (!containerData) return;
         persistedData.containerDataById[containerId] = sanitizeContainerDataForPersist(containerData);

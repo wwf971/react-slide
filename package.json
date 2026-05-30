@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite frontend --config frontend/vite.config.js",
-    "build": "rm -rf dist frontend/dist && vite build frontend --config frontend/vite.config.js --outDir build",
+    "build": "rm -rf dist frontend/dist && vite build frontend --config frontend/vite.config.js --outDir build && pnpm run build:backend",
     "build:deploy": "rm -rf dist frontend/dist && VITE_APP_BASE_PATH=/slides/ vite build frontend --config frontend/vite.config.js --outDir build && pnpm run build:backend",
     "build:backend": "rm -rf backend/build && esbuild backend/server.js --bundle --platform=node --format=esm --target=node24 --external:express --external:cors --external:pg --external:./config.0.js --outfile=backend/build/server.js",
     "lint": "eslint --config frontend/eslint.config.js frontend/src",

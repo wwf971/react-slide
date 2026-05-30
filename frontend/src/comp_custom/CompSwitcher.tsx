@@ -116,6 +116,8 @@ const CompSwitcher = observer(({
         initialPixelSize: { pixelX: 200, pixelY: 24 },
         fontScale: 1,
         fontScaleUnit: '1/100 slide width',
+        textHorizontalAlign: 'left',
+        textVerticalAlign: 'top',
       },
     });
   };

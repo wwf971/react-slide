@@ -144,30 +144,32 @@ const Header = observer(
     };
 
     const handleSwitchDatabase = async (presetKey: string) => {
-      if (!backendStore?.requestSwitchDatabase) return;
+      if (!backendStore?.requestSwitchDatabase) return { ok: false };
       const switchRequestToken = switchRequestTokenRef.current + 1;
       switchRequestTokenRef.current = switchRequestToken;
       const isLatestSwitchRequest = () => switchRequestTokenRef.current === switchRequestToken;
+      const switchResult = await backendStore.requestSwitchDatabase(presetKey);
+      if (!isLatestSwitchRequest()) return { ok: false };
+      if (!switchResult?.ok) return switchResult ?? { ok: false };
       if (onEndpointSwitchStart) {
         onEndpointSwitchStart();
       } else {
         slidesStore.resetStateForDatabaseSwitch?.();
       }
-      await backendStore.requestSwitchDatabase(presetKey);
-      if (!isLatestSwitchRequest()) return;
       await backendStore.requestLoadDatabases?.(true);
-      if (!isLatestSwitchRequest()) return;
+      if (!isLatestSwitchRequest()) return { ok: false };
       const endpointKeyCurrent = `${backendStore.endpointKeyCurrent ?? ''}`.trim();
       const currentDatabaseItem = (backendStore.databaseItems ?? []).find((item: any) => {
         return `${item?.key ?? ''}`.trim() === endpointKeyCurrent;
       });
       const isCurrentDatabaseReadable = currentDatabaseItem?.isConnected === true && currentDatabaseItem?.isInError !== true;
-      if (!isCurrentDatabaseReadable) return;
+      if (!isCurrentDatabaseReadable) return { ok: false };
       await slidesStore.requestInitializeSlides?.(true);
-      if (!isLatestSwitchRequest()) return;
+      if (!isLatestSwitchRequest()) return { ok: false };
       if (slidesStore.isSlideInitFailed !== true) {
         slidesStore.persistFailureMessage = '';
       }
+      return { ok: slidesStore.isSlideInitFailed !== true };
     };
 
     const slideNavigationItems = [
@@ -215,8 +217,7 @@ const Header = observer(
                     return;
                   }
                   if (eventType === 'switch') {
-                    void handleSwitchDatabase(`${eventData?.id ?? ''}`);
-                    return;
+                    return handleSwitchDatabase(`${eventData?.id ?? ''}`);
                   }
                   if (eventType === 'test') {
                     backendStore.requestTestDatabase?.(`${eventData?.id ?? ''}`);

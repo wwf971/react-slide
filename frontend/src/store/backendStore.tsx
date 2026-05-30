@@ -23,11 +23,14 @@ class BackendStore {
     const result = await requestJsonWithAuth(url, options);
     const body = result.body ?? {};
     const code = Number.isFinite(Number(body.code)) ? Number(body.code) : -1;
+    const isBackendUnreachable = result.status === 0;
     return {
       status: result.status,
       code,
       data: body.data ?? {},
-      message: `${body.message ?? ''}`.trim(),
+      message: isBackendUnreachable
+        ? 'Backend server is not responding'
+        : `${body.message ?? ''}`.trim(),
     };
   }
 
@@ -202,7 +205,7 @@ class BackendStore {
       return {
         ok: isSwitchOk,
         isSelected,
-        message,
+        message: message || (isSwitchOk ? '' : 'Failed to switch object-storage'),
       };
     } finally {
       runInAction(() => {
