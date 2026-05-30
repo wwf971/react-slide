@@ -60,11 +60,17 @@ const CompTextSingleline = observer(
       const currentContainerSize = store.getContainerSize(containerId);
       const initialPixelX = data?.initialPixelSize?.pixelX ?? 0;
       const initialPixelY = data?.initialPixelSize?.pixelY ?? 0;
-      const nextPixelX = Math.max(measuredPixelX, initialPixelX, currentContainerSize.pixelX);
-      const nextPixelY = Math.max(measuredPixelY, initialPixelY, currentContainerSize.pixelY);
+      const targetPixelX = Math.max(measuredPixelX, initialPixelX);
+      const targetPixelY = Math.max(measuredPixelY, initialPixelY);
+      store.setContainerMinPixelSize(containerId, {
+        pixelX: targetPixelX,
+        pixelY: targetPixelY,
+      });
+      const nextPixelX = Math.max(targetPixelX, currentContainerSize.pixelX);
+      const nextPixelY = Math.max(targetPixelY, currentContainerSize.pixelY);
       if (
-        nextPixelX === currentContainerSize.pixelX &&
-        nextPixelY === currentContainerSize.pixelY
+        targetPixelX <= currentContainerSize.pixelX &&
+        targetPixelY <= currentContainerSize.pixelY
       ) {
         return;
       }

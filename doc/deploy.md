@@ -6,7 +6,7 @@ Frontend build base path and reverse-proxy public prefix must match.
 
 Example:
 - frontend is built with base `/slides/`
-- nginx exposes `location /slides/ { proxy_pass http://<backend-host>:9300/; }`
+- nginx exposes `location /slides/ { proxy_pass http://<backend-host>:9405/; }`
 - browser requests `/slides/assets/...` and `/slides/api/...`
 - nginx strips `/slides/` and forwards to backend `/assets/...` and `/api/...`
 
@@ -24,7 +24,7 @@ If these two prefixes are different, assets and API calls will fail.
 To deploy with another prefix (for example `/deck/`):
 1. Set `VITE_APP_BASE_PATH=/deck/` in deploy build.
 2. Configure nginx:
-   - `location /deck/ { proxy_pass http://<backend-host>:9300/; }`
+   - `location /deck/ { proxy_pass http://<backend-host>:9405/; }`
 3. Deploy.
 
 No frontend source changes are required when only prefix/machine changes.

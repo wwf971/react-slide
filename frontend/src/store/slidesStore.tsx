@@ -114,6 +114,38 @@ const generateTypedId = (prefix, length = 10) => {
   return `${prefix}-${generateRandomToken(length)}`;
 };
 
+const toSlideTreeNodeId = (kind, sourceId, extraKey = '') => {
+  const safeExtraKey = `${extraKey ?? ''}`.trim();
+  return safeExtraKey ? `${kind}:${sourceId}:${safeExtraKey}` : `${kind}:${sourceId}`;
+};
+
+const toShortId = (value, length = 8) => {
+  const text = `${value ?? ''}`.trim();
+  if (text.length <= length) return text;
+  return text.slice(0, length);
+};
+
+const toResourceLabel = (fieldName, resourceId) => {
+  const keyText = `${fieldName ?? ''}`
+    .replace(/ResourceId$/, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .trim()
+    .toLowerCase();
+  const nameText = keyText ? `${keyText} resource` : 'resource';
+  return `${nameText} ${toShortId(resourceId, 10)}`;
+};
+
+const getCompResourceFields = (compData) => {
+  return Object.entries(compData ?? {})
+    .filter(([fieldName, value]) => {
+      return fieldName.endsWith('ResourceId') && `${value ?? ''}`.trim();
+    })
+    .map(([fieldName, value]) => ({
+      fieldName,
+      resourceId: `${value ?? ''}`.trim(),
+    }));
+};
+
 class SlidesStore {
   metadata: any = {
     pageIds: [] as string[],
@@ -156,6 +188,8 @@ class SlidesStore {
   temporaryOverflowVisibleContainerIdMap: any = {};
   temporaryCopiedContainerPayload: any = null;
   resourceTextCacheByResourceId: any = {};
+  containerMinPixelSizeById: any = {};
+  slideTreeExpandedBySlideId: any = {};
 
   constructor(seedData: any, slidesPersistStore: any = null) {
     this.slidesPersistStore = slidesPersistStore;
@@ -202,6 +236,172 @@ class SlidesStore {
 
   getAvailableCompScripts() {
     return getAvailableCompScripts();
+  }
+
+  getCurrentSlideName() {
+    const slideId = `${this.slideCurrentId ?? ''}`.trim();
+    const slideItem = (this.slideItems ?? []).find((item) => `${item?.id ?? ''}`.trim() === slideId);
+    return `${slideItem?.name ?? ''}`.trim() || slideId || 'Slide';
+  }
+
+  getSlideTreeExpandedMap(slideIdRaw = '') {
+    const slideId = `${slideIdRaw || this.slideCurrentId || ''}`.trim();
+    if (!slideId) return {};
+    if (!this.slideTreeExpandedBySlideId[slideId]) {
+      this.slideTreeExpandedBySlideId[slideId] = {};
+    }
+    return this.slideTreeExpandedBySlideId[slideId];
+  }
+
+  setSlideTreeItemExpanded(slideIdRaw, itemIdRaw, isExpanded) {
+    const slideId = `${slideIdRaw || this.slideCurrentId || ''}`.trim();
+    const itemId = `${itemIdRaw ?? ''}`.trim();
+    if (!slideId || !itemId) return;
+    const expandedMap = this.getSlideTreeExpandedMap(slideId);
+    expandedMap[itemId] = isExpanded === true;
+  }
+
+  expandSlideTreePathToContainer(containerIdRaw) {
+    const containerId = `${containerIdRaw ?? ''}`.trim();
+    const slideId = `${this.slideCurrentId ?? ''}`.trim();
+    const pageId = `${this.containerPageIdByContainerId[containerId] ?? ''}`.trim();
+    if (!slideId || !containerId || !pageId) return;
+    const containerData = this.getContainerData(containerId);
+    if (!containerData) return;
+    const expandedMap = this.getSlideTreeExpandedMap(slideId);
+    expandedMap[toSlideTreeNodeId('slide', slideId)] = true;
+    expandedMap[toSlideTreeNodeId('page', pageId)] = true;
+    expandedMap[toSlideTreeNodeId('container', containerId)] = true;
+  }
+
+  getSlideTreeData(slideIdRaw = '') {
+    const slideId = `${slideIdRaw || this.slideCurrentId || ''}`.trim();
+    const rootItemIds = slideId ? [toSlideTreeNodeId('slide', slideId)] : [];
+    const itemDataById: any = {};
+    const parentItemIdById: any = {};
+    const expandedMap = this.getSlideTreeExpandedMap(slideId);
+    const selectedContainerData = this.getContainerData(this.selectedContainerId);
+    const selectedCompId = `${selectedContainerData?.compId ?? this.selectedCompId ?? ''}`.trim();
+    const currentPageId = `${this.metadata?.currentPageId ?? ''}`.trim();
+    const selectedItemId = selectedCompId
+      ? toSlideTreeNodeId('comp', selectedCompId)
+      : (currentPageId ? toSlideTreeNodeId('page', currentPageId) : '');
+
+    if (!slideId) {
+      return { rootItemIds: [], itemDataById, parentItemIdById, selectedItemId: '' };
+    }
+
+    const slideNodeId = toSlideTreeNodeId('slide', slideId);
+    const pageIds = (this.metadata?.pageIds ?? []).filter(Boolean);
+    const pageNodeIds = pageIds.map((pageId) => toSlideTreeNodeId('page', pageId));
+    itemDataById[slideNodeId] = {
+      id: slideNodeId,
+      text: this.getCurrentSlideName(),
+      kind: 'slide',
+      slideId,
+      pageId: '',
+      containerId: '',
+      compId: '',
+      resourceId: '',
+      isLeaf: pageNodeIds.length === 0,
+      isExpanded: expandedMap[slideNodeId] !== false,
+      childrenIds: pageNodeIds,
+      childrenLoadState: 'loaded',
+    };
+
+    pageIds.forEach((pageId, pageIndex) => {
+      const pageNodeId = toSlideTreeNodeId('page', pageId);
+      const pageData = this.getPageData(pageId);
+      const containerIds = (pageData?.containerIds ?? []).filter(Boolean);
+      const containerNodeIds = containerIds.map((containerId) => toSlideTreeNodeId('container', containerId));
+      parentItemIdById[pageNodeId] = slideNodeId;
+      itemDataById[pageNodeId] = {
+        id: pageNodeId,
+        text: `Page ${pageIndex + 1}`,
+        kind: 'page',
+        slideId,
+        pageId,
+        containerId: '',
+        compId: '',
+        resourceId: '',
+        isCurrentPage: pageId === currentPageId,
+        isLeaf: containerNodeIds.length === 0,
+        isExpanded: expandedMap[pageNodeId] === true,
+        childrenIds: containerNodeIds,
+        childrenLoadState: 'loaded',
+      };
+
+      containerIds.forEach((containerId, containerIndex) => {
+        const containerNodeId = toSlideTreeNodeId('container', containerId);
+        const containerData = this.getContainerData(containerId);
+        const compId = `${containerData?.compId ?? ''}`.trim();
+        const compNodeId = compId ? toSlideTreeNodeId('comp', compId) : '';
+        parentItemIdById[containerNodeId] = pageNodeId;
+        itemDataById[containerNodeId] = {
+          id: containerNodeId,
+          text: `Container ${containerIndex + 1}`,
+          kind: 'container',
+          slideId,
+          pageId,
+          containerId,
+          compId,
+          resourceId: '',
+          isLeaf: !compNodeId,
+          isExpanded: expandedMap[containerNodeId] === true,
+          childrenIds: compNodeId ? [compNodeId] : [],
+          childrenLoadState: 'loaded',
+        };
+
+        if (!compId) return;
+        const compData = this.getCompData(compId);
+        const resourceNodes = getCompResourceFields(compData?.compData).map((resourceField) => {
+          const resourceNodeId = toSlideTreeNodeId(
+            'resource',
+            compId,
+            `${resourceField.fieldName}:${resourceField.resourceId}`,
+          );
+          parentItemIdById[resourceNodeId] = compNodeId;
+          itemDataById[resourceNodeId] = {
+            id: resourceNodeId,
+            text: toResourceLabel(resourceField.fieldName, resourceField.resourceId),
+            kind: 'resource',
+            slideId,
+            pageId,
+            containerId,
+            compId,
+            resourceId: resourceField.resourceId,
+            resourceFieldName: resourceField.fieldName,
+            isLeaf: true,
+            isExpanded: false,
+            childrenIds: [],
+            childrenLoadState: 'loaded',
+          };
+          return resourceNodeId;
+        });
+        parentItemIdById[compNodeId] = containerNodeId;
+        itemDataById[compNodeId] = {
+          id: compNodeId,
+          text: compData?.compName ?? 'Comp',
+          kind: 'comp',
+          slideId,
+          pageId,
+          containerId,
+          compId,
+          resourceId: '',
+          isLeaf: resourceNodes.length === 0,
+          isExpanded: expandedMap[compNodeId] === true,
+          childrenIds: resourceNodes,
+          childrenLoadState: 'loaded',
+        };
+      });
+    });
+
+    return {
+      rootItemIds,
+      itemDataById,
+      parentItemIdById,
+      selectedItemId,
+    };
   }
 
   createDefaultCompData(compName) {
@@ -299,6 +499,7 @@ class SlidesStore {
     this.temporarySwitcherByPageId = {};
     this.temporaryOverflowVisibleContainerIdMap = {};
     this.resourceTextCacheByResourceId = {};
+    this.containerMinPixelSizeById = {};
     this.temporaryCopiedContainerPayload = null;
   }
 
@@ -939,6 +1140,29 @@ class SlidesStore {
     return containerData.containerSize ?? { pixelX: 0, pixelY: 0 };
   }
 
+  getContainerMinPixelSize(containerId) {
+    const minPixelSize = this.containerMinPixelSizeById?.[containerId];
+    return {
+      pixelX: Math.max(0, Number(minPixelSize?.pixelX ?? 0)),
+      pixelY: Math.max(0, Number(minPixelSize?.pixelY ?? 0)),
+    };
+  }
+
+  setContainerMinPixelSize(containerId, nextPixelSize) {
+    if (!containerId) return;
+    const nextPixelX = Math.max(0, Math.round(Number(nextPixelSize?.pixelX ?? 0)));
+    const nextPixelY = Math.max(0, Math.round(Number(nextPixelSize?.pixelY ?? 0)));
+    const prevPixelSize = this.getContainerMinPixelSize(containerId);
+    if (prevPixelSize.pixelX === nextPixelX && prevPixelSize.pixelY === nextPixelY) return;
+    this.containerMinPixelSizeById = {
+      ...this.containerMinPixelSizeById,
+      [containerId]: {
+        pixelX: nextPixelX,
+        pixelY: nextPixelY,
+      },
+    };
+  }
+
   getTemporarySwitcher(pageId) {
     if (!pageId) return null;
     return this.temporarySwitcherByPageId[pageId] ?? null;
@@ -1062,12 +1286,17 @@ class SlidesStore {
   setSelectedContainer(containerId) {
     const containerData = this.getContainerData(containerId);
     if (!containerData) return;
+    const pageId = `${this.containerPageIdByContainerId[containerId] ?? ''}`.trim();
+    if (pageId && this.pageDataById[pageId]) {
+      this.metadata.currentPageId = pageId;
+    }
     this.selectedContainerId = containerId;
     this.selectedCompId = containerData.compId ?? '';
     if (this.editingCompId && this.editingCompId !== this.selectedCompId) {
       this.editingCompId = '';
     }
     this.isSlideSurfaceSelected = false;
+    this.expandSlideTreePathToContainer(containerId);
   }
 
   clearSelectedContainer() {
@@ -1334,6 +1563,7 @@ class SlidesStore {
     const compId = containerData.compId ?? '';
     delete this.containerDataById[containerId];
     delete this.containerPageIdByContainerId[containerId];
+    delete this.containerMinPixelSizeById[containerId];
     this.setContainerOverflowVisible(containerId, false);
 
     this.pageDataById[pageId] = {

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createMs48Id } from '@wwf971/react-comp-misc/idUtils';
 import { createSeedSlideDocument } from './init_data.js';
 import { OBJECT_STORAGE_CURRENT, normalizeObjectStoragePreset } from './config.js';
 
@@ -88,31 +89,31 @@ const parseJsonText = (value, fallbackValue) => {
   }
 };
 
-const normalizeSlidePayload = (payload, fallbackName = 'Untitled') => {
-  const nextPayload = {
-    ...(payload ?? {}),
+const normalizeSlidePayload = (slideDoc, fallbackName = 'Untitled') => {
+  const nextSlideDoc = {
+    ...(slideDoc ?? {}),
   };
-  if (!nextPayload.name || typeof nextPayload.name !== 'string') {
-    nextPayload.name = fallbackName;
+  if (!nextSlideDoc.name || typeof nextSlideDoc.name !== 'string') {
+    nextSlideDoc.name = fallbackName;
   }
-  if (!nextPayload.metadata) {
-    nextPayload.metadata = {
+  if (!nextSlideDoc.metadata) {
+    nextSlideDoc.metadata = {
       pageIds: [],
       currentPageId: '',
       aspectRatio: { x: 16, y: 9 },
     };
   }
-  if (!nextPayload.pageDataById) nextPayload.pageDataById = {};
-  if (!nextPayload.containerDataById) nextPayload.containerDataById = {};
-  if (!nextPayload.compDataById) nextPayload.compDataById = {};
-  Object.values(nextPayload.compDataById).forEach((compEntry) => {
+  if (!nextSlideDoc.pageDataById) nextSlideDoc.pageDataById = {};
+  if (!nextSlideDoc.containerDataById) nextSlideDoc.containerDataById = {};
+  if (!nextSlideDoc.compDataById) nextSlideDoc.compDataById = {};
+  Object.values(nextSlideDoc.compDataById).forEach((compEntry) => {
     if (`${compEntry?.compName ?? ''}` !== 'CompIFrame') return;
     compEntry.compData = {
       ...(compEntry?.compData ?? {}),
       isIframeActive: false,
     };
   });
-  return nextPayload;
+  return nextSlideDoc;
 };
 
 const readSpaceMetadataMap = async (ctx) => {
@@ -429,18 +430,42 @@ const deleteObjects = async (ctx, dataType, objectIds) => {
   });
 };
 
-const getSlideSnapshotById = async (ctx, slideId) => {
-  const objectId = `${slideId ?? ''}`.trim();
-  if (!objectId) return null;
-  let row;
+const getSlideIdFromRow = (row) => {
+  const slideDoc = row?.valueJson ?? {};
+  return `${slideDoc?.slideId ?? slideDoc?.legacySlideId ?? row?.objectId ?? ''}`.trim();
+};
+
+const getSlideRowById = async (ctx, slideId) => {
+  const normalizedSlideId = `${slideId ?? ''}`.trim();
+  if (!normalizedSlideId) return null;
   try {
-    row = await getObject(ctx, 'json', objectId);
+    const row = await getObject(ctx, 'json', normalizedSlideId);
+    if (row) {
+      return {
+        objectId: normalizedSlideId,
+        row,
+      };
+    }
   } catch (error) {
     const messageText = `${error instanceof Error ? error.message : error}`.toLowerCase();
-    if (messageText.includes('object not found')) return null;
-    throw error;
+    if (!messageText.includes('object not found')) throw error;
   }
+  const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
+  const matchedRow = slideRows.find((row) => getSlideIdFromRow(row) === normalizedSlideId);
+  if (!matchedRow) return null;
+  return {
+    objectId: `${matchedRow?.objectId ?? ''}`.trim(),
+    row: matchedRow,
+  };
+};
+
+const getSlideSnapshotById = async (ctx, slideId) => {
+  const slideRow = await getSlideRowById(ctx, slideId);
+  if (!slideRow) return null;
+  const row = slideRow.row;
   const slideData = normalizeSlidePayload(row?.valueJson ?? {}, 'Untitled');
+  const normalizedSlideId = `${slideId ?? ''}`.trim();
+  slideData.slideId = `${slideData?.slideId ?? ''}`.trim() || normalizedSlideId || slideRow.objectId;
   const hasPageData = Object.keys(slideData?.pageDataById ?? {}).length > 0;
   if (hasPageData) {
     return slideData;
@@ -495,13 +520,22 @@ const getSlideSnapshotById = async (ctx, slideId) => {
 
 const saveSlideSnapshotById = async (ctx, slideId, slideData) => {
   const normalizedData = normalizeSlidePayload(slideData);
-  const payload = { ...normalizedData };
-  const objectId = `${slideId ?? ''}`.trim();
-  if (objectId) {
-    await updateObject(ctx, 'json', objectId, TYPE_CODE.slide, { valueJson: payload }, true);
-    return objectId;
+  const slideDoc = { ...normalizedData };
+  const normalizedSlideId = `${slideId ?? slideDoc?.slideId ?? ''}`.trim();
+  if (normalizedSlideId) {
+    slideDoc.slideId = normalizedSlideId;
+    const slideRow = await getSlideRowById(ctx, normalizedSlideId);
+    if (slideRow?.objectId) {
+      await updateObject(ctx, 'json', slideRow.objectId, TYPE_CODE.slide, { valueJson: slideDoc }, true);
+      return normalizedSlideId;
+    }
+    await createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: slideDoc });
+    return normalizedSlideId;
   }
-  return createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: payload });
+  const nextSlideId = createMs48Id();
+  slideDoc.slideId = nextSlideId;
+  await createObject(ctx, 'json', TYPE_CODE.slide, { valueJson: slideDoc });
+  return nextSlideId;
 };
 
 const collectResourceIdsFromCompData = (value, output = new Set()) => {
@@ -541,10 +575,11 @@ const initBackendStore = async (ctx) => {
 const listSlides = async (ctx) => {
   await ensureBackendStoreReady(ctx);
   const slideRows = await listAllObjectsByType(ctx, 'json', TYPE_CODE.slide);
-  const slideIds = slideRows.map((row) => `${row?.objectId ?? ''}`.trim()).filter(Boolean);
   const slides = [];
-  for (const slideId of slideIds) {
-    const slideData = await getSlideSnapshotById(ctx, slideId);
+  for (const row of slideRows) {
+    const slideId = getSlideIdFromRow(row);
+    if (!slideId) continue;
+    const slideData = normalizeSlidePayload(row?.valueJson ?? {}, 'Untitled');
     if (!slideData) continue;
     slides.push({
       id: slideId,
@@ -727,7 +762,7 @@ const updateSlideGroupSlides = async (ctx, groupIdRaw, nextSlidesRaw, nextFolder
 
 const createSlide = async (ctx, requestedName) => {
   await ensureBackendStoreReady(ctx);
-  const firstPageId = `page-${Date.now()}`;
+  const firstPageId = `page-${createMs48Id()}`;
   const name = `${requestedName ?? ''}`.trim() || 'Untitled';
   const payload = {
     name,
@@ -1012,7 +1047,10 @@ const collectOwnedObjectIdsByType = async (ctx, typeCode, slideId, relatedIdSet)
 
 const deleteSlide = async (ctx, slideId) => {
   await ensureBackendStoreReady(ctx);
-  const objectId = `${slideId ?? ''}`.trim();
+  const normalizedSlideId = `${slideId ?? ''}`.trim();
+  if (!normalizedSlideId) return { ok: false, message: 'slide not found' };
+  const slideRow = await getSlideRowById(ctx, normalizedSlideId);
+  const objectId = `${slideRow?.objectId ?? ''}`.trim();
   if (!objectId) return { ok: false, message: 'slide not found' };
   const slideData = await getSlideSnapshotById(ctx, slideId);
   if (!slideData) return { ok: false, message: 'slide not found' };
@@ -1028,9 +1066,9 @@ const deleteSlide = async (ctx, slideId) => {
     ...compIds,
   ]);
   const [pageObjectIds, containerObjectIds, componentObjectIds] = await Promise.all([
-    collectOwnedObjectIdsByType(ctx, TYPE_CODE.page, objectId, relatedIdSet),
-    collectOwnedObjectIdsByType(ctx, TYPE_CODE.container, objectId, relatedIdSet),
-    collectOwnedObjectIdsByType(ctx, TYPE_CODE.component, objectId, relatedIdSet),
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.page, normalizedSlideId, relatedIdSet),
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.container, normalizedSlideId, relatedIdSet),
+    collectOwnedObjectIdsByType(ctx, TYPE_CODE.component, normalizedSlideId, relatedIdSet),
   ]);
   if (componentObjectIds.length > 0) {
     const componentIdSet = toNormalizedIdSet(componentObjectIds);

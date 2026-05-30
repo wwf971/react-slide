@@ -174,35 +174,44 @@ const CompImage = observer(
       </div>
       {menuPosition && (
         <Menu
-          position={menuPosition}
-          onClose={() => setMenuPosition(null)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            setMenuPosition({
-              x: event.clientX,
-              y: event.clientY,
-            });
+          data={{
+            position: menuPosition,
+            items: [
+              {
+                id: 'fill-container',
+                label: 'Fill container',
+                isDisabled: isCover,
+              },
+              {
+                id: 'show-entire-image',
+                label: 'Show entire image',
+                isDisabled: !isCover,
+              },
+            ],
           }}
-          onItemClick={(item) => {
-            if (item?.name === 'Fill container') {
+          onEvent={(eventType, eventData) => {
+            if (eventType === 'close') {
+              setMenuPosition(null);
+              return;
+            }
+            if (eventType === 'backdropContextMenu') {
+              const event = eventData.event;
+              event.preventDefault();
+              setMenuPosition({
+                x: event.clientX,
+                y: event.clientY,
+              });
+              return;
+            }
+            if (eventType !== 'itemClick') return;
+            const item = eventData.item;
+            if (item?.id === 'fill-container') {
               store.requestContainerCompDataUpdate(containerId, { isCover: true });
             }
-            if (item?.name === 'Show entire image') {
+            if (item?.id === 'show-entire-image') {
               store.requestContainerCompDataUpdate(containerId, { isCover: false });
             }
           }}
-          items={[
-            {
-              type: 'item',
-              name: 'Fill container',
-              disabled: isCover,
-            },
-            {
-              type: 'item',
-              name: 'Show entire image',
-              disabled: !isCover,
-            },
-          ]}
         />
       )}
     </div>

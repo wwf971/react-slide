@@ -12,6 +12,6 @@ Result: example comps stay focused on content/editing, while move/resize logic i
 
 ## Font scaling rule for text-like components
 
-For `CompTextSingleline`, `CompTextMultline`, and `CompIFrame`, font size should be derived from slide width ratio, not fixed pixels. Keep `fontScale` in comp data and compute runtime pixel size by `(slidePixelWidth * fontScale) / 100` with min and max clamps.
+For `CompTextSingleLine`, `CompTextMultline`, and `CompIFrame`, font size should be derived from slide width ratio, not fixed pixels. Keep `fontScale` in comp data and compute runtime pixel size by `(slidePixelWidth * fontScale) / 100` with min and max clamps.
 
 

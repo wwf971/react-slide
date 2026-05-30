@@ -20,7 +20,7 @@ Code reflection:
   - flushes both slide data and overview/group data
 - `frontend/src/layout/Header.tsx`
   - slide-page endpoint switch calls `onEndpointSwitchStart` before the backend switch request
-- `frontend/src/overview/SlidesOverviewHeader.tsx`
+- `frontend/src/view-overall/SlideOverallHeader.tsx`
   - overview endpoint switch calls `onEndpointSwitchStart` before the backend switch request
 - `frontend/src/store/slidesStore.tsx`
   - `resetStateForDatabaseSwitch()`

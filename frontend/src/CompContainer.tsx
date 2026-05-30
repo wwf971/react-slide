@@ -116,6 +116,40 @@ const applyAspectByDirection = (startRect, rect, dir) => {
   return { left, top, width, height };
 };
 
+const clampResizeRectByDirection = (startRect, rect, dir, limits) => {
+  const hasN = dir.includes('n');
+  const hasS = dir.includes('s');
+  const hasE = dir.includes('e');
+  const hasW = dir.includes('w');
+  const minWidth = Math.max(MIN_RATIO_SIZE, limits?.minWidth ?? 0);
+  const minHeight = Math.max(MIN_RATIO_SIZE, limits?.minHeight ?? 0);
+  const maxWidth = Math.max(minWidth, MAX_RATIO_SIZE);
+  const maxHeight = Math.max(minHeight, MAX_RATIO_SIZE);
+
+  let left = rect.left;
+  let top = rect.top;
+  let width = clamp(rect.width, minWidth, maxWidth);
+  let height = clamp(rect.height, minHeight, maxHeight);
+
+  if (hasW) {
+    left = startRect.left + startRect.width - width;
+  } else if (!hasE) {
+    left = Number.isFinite(rect.left) ? rect.left : startRect.left;
+  } else {
+    left = startRect.left;
+  }
+
+  if (hasN) {
+    top = startRect.top + startRect.height - height;
+  } else if (!hasS) {
+    top = Number.isFinite(rect.top) ? rect.top : startRect.top;
+  } else {
+    top = startRect.top;
+  }
+
+  return { left, top, width, height };
+};
+
 const resolveCursorClass = (dir) => {
   if (dir === 'n' || dir === 's') return 'cursor-ns';
   if (dir === 'e' || dir === 'w') return 'cursor-ew';
@@ -305,6 +339,16 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
         if (nextEvent.shiftKey) {
           nextRect = applyAspectByDirection(startRect, nextRect, dir);
         }
+
+        const minPixelSize = store.getContainerMinPixelSize(containerId);
+        const minRatioWidth =
+          minPixelSize.pixelX > 0 ? minPixelSize.pixelX / safeWidth : MIN_RATIO_SIZE;
+        const minRatioHeight =
+          minPixelSize.pixelY > 0 ? minPixelSize.pixelY / safeHeight : MIN_RATIO_SIZE;
+        nextRect = clampResizeRectByDirection(startRect, nextRect, dir, {
+          minWidth: minRatioWidth,
+          minHeight: minRatioHeight,
+        });
       }
 
       const safeRect = normalizeRect(nextRect);
@@ -413,50 +457,50 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
       });
     };
     const newChildren = store.getAvailableCompNames().map((compName) => ({
-      type: 'item' as const,
-      name: compName,
+      id: `new-comp-${compName}`,
+      label: compName,
       data: { action: 'new-comp', compName },
     }));
     return [
       {
-        type: 'menu' as const,
-        name: 'New',
+        id: 'new',
+        label: 'New',
         children: newChildren,
       },
       {
-        type: 'menu' as const,
-        name: 'Layer',
+        id: 'layer',
+        label: 'Layer',
         children: [
           {
-            type: 'item' as const,
-            name: 'One Layer Down',
+            id: 'layer-down',
+            label: 'One Layer Down',
             data: { action: 'layer-down' },
           },
           {
-            type: 'item' as const,
-            name: 'One Layer Up',
+            id: 'layer-up',
+            label: 'One Layer Up',
             data: { action: 'layer-up' },
           },
           {
-            type: 'item' as const,
-            name: 'To Bottom Layer',
+            id: 'layer-bottom',
+            label: 'To Bottom Layer',
             data: { action: 'layer-bottom' },
           },
           {
-            type: 'item' as const,
-            name: 'To Top Layer',
+            id: 'layer-top',
+            label: 'To Top Layer',
             data: { action: 'layer-top' },
           },
         ],
       },
       {
-        type: 'menu' as const,
-        name: 'Font',
-        disabled: !isFontAdjustableComp,
+        id: 'font',
+        label: 'Font',
+        isDisabled: !isFontAdjustableComp,
         children: [
           {
-            type: 'item' as const,
-            name: (
+            id: 'font-control',
+            label: (
               <FontScaleControl
                 fontScaleValue={safeFontScale}
                 onChangeFontScale={requestSetFontScale}
@@ -465,64 +509,64 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
             data: { action: 'font-control' },
           },
           {
-            type: 'item' as const,
-            name: 'Decrease',
+            id: 'font-decrease',
+            label: 'Decrease',
             data: { action: 'font-decrease' },
           },
           {
-            type: 'item' as const,
-            name: 'Increase',
+            id: 'font-increase',
+            label: 'Increase',
             data: { action: 'font-increase' },
           },
           {
-            type: 'item' as const,
-            name: '0.8',
+            id: 'font-scale-0-8',
+            label: '0.8',
             data: { action: 'font-set', fontScale: 0.8 },
           },
           {
-            type: 'item' as const,
-            name: '1.0',
+            id: 'font-scale-1',
+            label: '1.0',
             data: { action: 'font-set', fontScale: 1.0 },
           },
           {
-            type: 'item' as const,
-            name: '1.2',
+            id: 'font-scale-1-2',
+            label: '1.2',
             data: { action: 'font-set', fontScale: 1.2 },
           },
           {
-            type: 'item' as const,
-            name: '1.5',
+            id: 'font-scale-1-5',
+            label: '1.5',
             data: { action: 'font-set', fontScale: 1.5 },
           },
         ],
       },
       {
-        type: 'item' as const,
-        name: 'Edit URL',
+        id: 'url-edit',
+        label: 'Edit URL',
         data: { action: 'url-edit' },
-        disabled: !isUrlComp,
+        isDisabled: !isUrlComp,
       },
       {
-        type: 'item' as const,
-        name: 'Copy',
+        id: 'copy-container',
+        label: 'Copy',
         data: { action: 'copy-container' },
       },
       {
-        type: 'item' as const,
-        name: 'Paste',
+        id: 'paste-container',
+        label: 'Paste',
         data: { action: 'paste-container' },
-        disabled: !isPasteEnabled,
+        isDisabled: !isPasteEnabled,
       },
       {
-        type: 'item' as const,
-        name: 'Delete',
+        id: 'delete-container',
+        label: 'Delete',
         data: { action: 'delete-container' },
       },
       {
-        type: 'item' as const,
-        name: 'Cancel IFrame',
+        id: 'iframe-cancel',
+        label: 'Cancel IFrame',
         data: { action: 'iframe-cancel' },
-        disabled: !isIFrameComp,
+        isDisabled: !isIFrameComp,
       },
     ];
   }, [store, compData, containerId, isPasteEnabled]);
@@ -597,11 +641,21 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
         ))}
       {menuState?.position && !isReadOnly ? (
         <Menu
-          items={menuItems}
-          position={menuState.position}
-          onClose={() => setMenuState(null)}
-          onContextMenu={openContextMenu}
-          onItemClick={(item) => {
+          data={{
+            items: menuItems,
+            position: menuState.position,
+          }}
+          onEvent={(eventType, eventData) => {
+            if (eventType === 'close') {
+              setMenuState(null);
+              return;
+            }
+            if (eventType === 'backdropContextMenu') {
+              openContextMenu(eventData.event);
+              return;
+            }
+            if (eventType !== 'itemClick') return;
+            const item = eventData.item;
             if (item?.data?.action === 'delete-container') {
               store.requestDeleteContainer(containerId);
             }

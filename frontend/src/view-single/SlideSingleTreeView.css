@@ -1,0 +1,111 @@
+.slide-tree-root {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+  background: #f8fbff;
+}
+
+.slide-tree-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #274c7c;
+}
+
+.slide-tree-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.slide-tree-view {
+  height: 100%;
+  border: 1px solid #d4deec;
+  border-radius: 2px;
+  background: #ffffff;
+}
+
+.slide-tree-view .tree-view-row {
+  height: 23px;
+  padding: 0 3px;
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+
+.slide-tree-view .tree-view-row:hover {
+  background: #edf4ff;
+}
+
+.slide-tree-view .tree-view-row.selected {
+  background: #dcebff;
+}
+
+.slide-tree-view .tree-view-row.is-leaf:hover,
+.slide-tree-view .tree-view-row.is-leaf.selected {
+  background: #edf4ff;
+}
+
+.slide-tree-view .tree-view-row.is-leaf.selected {
+  background: #dcebff;
+}
+
+.slide-tree-view .tree-view-row.is-leaf .tree-view-label,
+.slide-tree-view .tree-view-row.is-leaf:hover .tree-view-label,
+.slide-tree-view .tree-view-row.is-leaf.selected .tree-view-label {
+  padding-left: 0;
+  background: transparent;
+}
+
+.slide-tree-view .tree-view-toggle-btn {
+  width: 13px;
+  min-width: 13px;
+  height: 13px;
+}
+
+.slide-tree-item-content {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 2px;
+  padding: 1px 2px;
+  box-sizing: border-box;
+}
+
+.slide-tree-item-content.is-current-page {
+  background: #cfe0f8;
+}
+
+.slide-tree-item-kind {
+  flex: 0 0 auto;
+  min-width: 42px;
+  padding: 0 3px;
+  border: 1px solid #d4deec;
+  border-radius: 2px;
+  background: #f6f9ff;
+  color: #335e92;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.slide-tree-item-kind.is-resource {
+  color: #6d5926;
+  background: #fff8e1;
+  border-color: #ead99a;
+}
+
+.slide-tree-item-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: #1f2d3d;
+}

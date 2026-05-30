@@ -6,7 +6,7 @@ const CompTextMultline = observer(
   ({ data, containerId, compId, requestContainerMoveByPoint, isReadOnly }: any) => {
   const store = useSlidesStore();
   const rootRef = useRef<any>(null);
-  const textareaRef = useRef(null);
+  const contentRef = useRef<any>(null);
   const dragStateRef = useRef<any>(null);
   const textValue = data?.text ?? '';
   const isSelected = store.selectedContainerId === containerId;
@@ -31,7 +31,7 @@ const CompTextMultline = observer(
   }, [fontPixelSize]);
 
   const requestFit = () => {
-    const element = textareaRef.current;
+    const element = contentRef.current;
     if (!element) return;
     const prevHeight = element.style.height;
     const prevOverflowY = element.style.overflowY;
@@ -44,8 +44,14 @@ const CompTextMultline = observer(
     const currentContainerSize = store.getContainerSize(containerId);
     const initialPixelX = data?.initialPixelSize?.pixelX ?? 0;
     const initialPixelY = data?.initialPixelSize?.pixelY ?? 0;
-    const nextPixelX = Math.max(currentContainerSize.pixelX, initialPixelX);
-    const nextPixelY = Math.max(measuredPixelY, initialPixelY);
+    const targetPixelX = Math.max(initialPixelX, 0);
+    const targetPixelY = Math.max(measuredPixelY, initialPixelY);
+    store.setContainerMinPixelSize(containerId, {
+      pixelX: targetPixelX,
+      pixelY: targetPixelY,
+    });
+    const nextPixelX = Math.max(currentContainerSize.pixelX, targetPixelX);
+    const nextPixelY = Math.max(currentContainerSize.pixelY, targetPixelY);
     if (
       nextPixelX === currentContainerSize.pixelX &&
       nextPixelY === currentContainerSize.pixelY
@@ -63,6 +69,8 @@ const CompTextMultline = observer(
   }, [
     textValue,
     fontPixelSize,
+    containerSize.pixelX,
+    containerSize.pixelY,
     data?.initialPixelSize?.pixelX,
     data?.initialPixelSize?.pixelY,
   ]);
@@ -81,7 +89,7 @@ const CompTextMultline = observer(
 
   useEffect(() => {
     if (!isEditing) return;
-    const element = textareaRef.current;
+    const element = contentRef.current;
     if (!element) return;
     element.focus();
   }, [isEditing]);
@@ -103,7 +111,7 @@ const CompTextMultline = observer(
     <div ref={rootRef} className="slide-text-root">
       {isEditing ? (
         <textarea
-          ref={textareaRef}
+          ref={contentRef}
           className="slide-textarea"
           readOnly={isReadOnly}
           value={textValue}
@@ -116,6 +124,7 @@ const CompTextMultline = observer(
         />
       ) : (
         <div
+          ref={contentRef}
           className="slide-text-view"
           onPointerDown={(event) => {
             if (isReadOnly) return;

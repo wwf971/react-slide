@@ -103,23 +103,23 @@ const Page = observer(({
 
   const menuItems = useMemo(() => {
     const newChildren = store.getAvailableCompNames().map((compName) => ({
-      type: 'item' as const,
-      name: compName,
+      id: `new-comp-${compName}`,
+      label: compName,
       data: { action: 'new-comp', compName },
-      disabled: isReadOnly,
+      isDisabled: isReadOnly,
     }));
     return [
       {
-        type: 'menu' as const,
-        name: 'New',
+        id: 'new',
+        label: 'New',
         children: newChildren,
-        disabled: isReadOnly,
+        isDisabled: isReadOnly,
       },
       {
-        type: 'item' as const,
-        name: 'Paste',
+        id: 'paste-container',
+        label: 'Paste',
         data: { action: 'paste-container' },
-        disabled: isReadOnly || !isPasteEnabled,
+        isDisabled: isReadOnly || !isPasteEnabled,
       },
     ];
   }, [store, isReadOnly, isPasteEnabled]);
@@ -366,11 +366,21 @@ const Page = observer(({
           ) : null}
           {menuState?.position && !isReadOnly ? (
             <Menu
-              items={menuItems}
-              position={menuState.position}
-              onClose={() => setMenuState(null)}
-              onContextMenu={openContextMenu}
-              onItemClick={(item) => {
+              data={{
+                items: menuItems,
+                position: menuState.position,
+              }}
+              onEvent={(eventType, eventData) => {
+                if (eventType === 'close') {
+                  setMenuState(null);
+                  return;
+                }
+                if (eventType === 'backdropContextMenu') {
+                  openContextMenu(eventData.event);
+                  return;
+                }
+                if (eventType !== 'itemClick') return;
+                const item = eventData.item;
                 if (item?.data?.action === 'new-comp') {
                   store.requestCreateContainerWithComp(item.data.compName, menuState.anchorPoint);
                 }

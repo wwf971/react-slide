@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { FolderView, Menu, PanelPopup } from '@wwf971/react-comp-misc';
 import { useNavigate } from 'react-router-dom';
-import SlidesOverviewHeader from './SlidesOverviewHeader';
-import SlidesOverviewNameCell from './SlidesOverviewNameCell';
-import './SlidesOverview.css';
+import SlideOverallHeader from './SlideOverallHeader';
+import SlideOverallNameCell from './SlideOverallNameCell';
+import './SlideOverallView.css';
 
-const SlidesOverview = observer(({
+const SlideOverallView = observer(({
   slidesStore,
   slidesGroupStore,
   backendStore = null,
@@ -66,7 +66,7 @@ const SlidesOverview = observer(({
 
   const renderNameCell = ({ data, rowId, isMissing = false, onRename }) => {
     return (
-      <SlidesOverviewNameCell
+      <SlideOverallNameCell
         name={`${data ?? ''}`}
         rowId={`${rowId ?? ''}`.trim()}
         isEditable={isNameEditable}
@@ -79,7 +79,7 @@ const SlidesOverview = observer(({
   return (
     <div className="slides-overview-root">
       <div className="slides-overview-main">
-        <SlidesOverviewHeader
+        <SlideOverallHeader
           slidesGroupStore={slidesGroupStore}
           backendStore={backendStore}
           onEndpointSwitchStart={onEndpointSwitchStart}
@@ -146,7 +146,7 @@ const SlidesOverview = observer(({
               }}
               onRowDoubleClick={(slideId) => {
                 if (!slideId) return;
-                navigate(`/slide/${slideId}`);
+                navigate(`/slide?slideId=${encodeURIComponent(slideId)}`);
               }}
             />
           </div>
@@ -228,7 +228,7 @@ const SlidesOverview = observer(({
             }}
             onRowDoubleClick={(groupId) => {
               if (!groupId) return;
-              navigate(`/group/${groupId}`);
+              navigate(`/group?groupId=${encodeURIComponent(groupId)}`);
             }}
           />
         </div>
@@ -286,15 +286,22 @@ const SlidesOverview = observer(({
 
       {orphanMenuState ? (
         <Menu
-          items={[
-            { type: 'item', name: 'New Orphan Slide', data: { action: 'create-orphan-slide' } },
-            ...(orphanMenuState.slideId
-              ? [{ type: 'item', name: 'Delete', data: { action: 'delete-orphan-slide' } }]
-              : []),
-          ]}
-          position={{ x: orphanMenuState.x, y: orphanMenuState.y }}
-          onClose={() => setOrphanMenuState(null)}
-          onItemClick={async (item) => {
+          data={{
+            items: [
+              { id: 'create-orphan-slide', label: 'New Orphan Slide', data: { action: 'create-orphan-slide' } },
+              ...(orphanMenuState.slideId
+                ? [{ id: 'delete-orphan-slide', label: 'Delete', data: { action: 'delete-orphan-slide' } }]
+                : []),
+            ],
+            position: { x: orphanMenuState.x, y: orphanMenuState.y },
+          }}
+          onEvent={async (eventType, eventData) => {
+            if (eventType === 'close') {
+              setOrphanMenuState(null);
+              return;
+            }
+            if (eventType !== 'itemClick') return;
+            const item = eventData.item;
             const action = item?.data?.action;
             const slideId = `${orphanMenuState?.slideId ?? ''}`.trim();
             setOrphanMenuState(null);
@@ -314,4 +321,4 @@ const SlidesOverview = observer(({
   );
 });
 
-export default SlidesOverview;
+export default SlideOverallView;

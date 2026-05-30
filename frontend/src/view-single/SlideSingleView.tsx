@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
+import { PanelDual } from '@wwf971/react-comp-misc';
 import { SlideStoreProvider } from '../store/slidesStore';
 import Page from '../page/Page';
 import Header from '../layout/Header';
+import SlideSingleTreeView from './SlideSingleTreeView';
 import '../page/Page.css';
 
-const Slides = observer(({
+const SlideSingleView = observer(({
   store,
   backendStore,
   getComp,
@@ -65,12 +67,12 @@ const Slides = observer(({
 
   useEffect(() => {
     if (!onCurrentSlideIdChange) return;
-    const nextSlideId = `${slideCurrentId ?? ''}`.trim();
+    const nextSlideId = `${store.slideCurrentId ?? ''}`.trim();
     if (!nextSlideId) return;
     const requestedId = `${slideIdRequested ?? ''}`.trim();
-    if (requestedId && requestedId !== nextSlideId && !isRequestedSlideIdMissing) return;
+    if (requestedId && requestedId !== nextSlideId && store.isSlideSwitching) return;
     onCurrentSlideIdChange(nextSlideId);
-  }, [slideCurrentId, onCurrentSlideIdChange, slideIdRequested, isRequestedSlideIdMissing]);
+  }, [slideCurrentId, onCurrentSlideIdChange, slideIdRequested, store, store.isSlideSwitching]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -118,93 +120,104 @@ const Slides = observer(({
   const prevPage = store.getPrevPageData(currentPageId);
   const nextPage = store.getNextPageData(currentPageId);
   const currentGroupId = `${ownerGroupIdBySlideId?.[slideCurrentId] ?? ''}`.trim();
+  const canvasContent = isRequestedSlideIdMissing ? (
+    <div className="slide-system-empty">
+      Slide not found: {requestedSlideIdNormalized}
+      <button
+        className="slide-toolbar-btn"
+        type="button"
+        disabled={store.isSlidesInitializing}
+        onClick={() => {
+          store.requestInitializeSlides(true);
+        }}
+      >
+        Refresh Slides
+      </button>
+    </div>
+  ) : currentPage ? (
+    <Page
+      {...({
+        pageId: currentPage.id,
+        getComp,
+        isPrevEnabled: Boolean(prevPage),
+        isNextEnabled: Boolean(nextPage),
+        onGoPrev: () => {
+          if (!prevPage) return;
+          store.setCurrentPage(prevPage.id);
+          store.clearSelectedContainer();
+        },
+        onGoNext: () => {
+          if (!nextPage) return;
+          store.setCurrentPage(nextPage.id);
+          store.clearSelectedContainer();
+        },
+        onCreateNextPage: () => {
+          store.requestCreatePageAfterCurrent();
+        },
+        isFullWindow,
+        onToggleFullWindow: () => {
+          setIsFullWindow((isPrevFullWindow) => {
+            const isNextFullWindow = !isPrevFullWindow;
+            if (isNextFullWindow) {
+              store.setPlayMode(true);
+            }
+            return isNextFullWindow;
+          });
+        },
+      } as any)}
+    />
+  ) : (
+    <div className="slide-system-empty">
+      No page data
+      <button
+        className="slide-toolbar-btn"
+        type="button"
+        disabled={store.isSlidesInitializing}
+        onClick={() => {
+          store.requestInitializeSlides(true);
+        }}
+      >
+        Refresh Slides
+      </button>
+    </div>
+  );
 
   return (
     <SlideStoreProvider store={store}>
       <div className={`slide-system-root ${isFullWindow ? 'is-full-window' : ''}`}>
-        <Header
-          slidesStore={store}
-          backendStore={backendStore ?? null}
-          onEndpointSwitchStart={onEndpointSwitchStart}
-          config={{
-            isHidden: isFullWindow,
-            isSlideNavigationButtonVisible: true,
-            isViewInsideGroupButtonVisible: Boolean(currentGroupId),
-          }}
-          onEvent={async (event) => {
-            if (event.type === 'viewInsideGroup') {
-              if (!currentGroupId || !slideCurrentId) return true;
-              onRequestOpenGroupView?.(currentGroupId, slideCurrentId);
-              return true;
-            }
-            if (event.type === 'viewOverview') {
-              onRequestOpenOverview?.();
-              return true;
-            }
-            return false;
-          }}
-        />
-        <div className="slide-system-canvas-wrap">
-          {isRequestedSlideIdMissing ? (
-            <div className="slide-system-empty">
-              Slide not found: {requestedSlideIdNormalized}
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={store.isSlidesInitializing}
-                onClick={() => {
-                  store.requestInitializeSlides(true);
-                }}
-              >
-                Refresh Slides
-              </button>
-            </div>
-          ) : currentPage ? (
-            <Page
-              {...({
-                pageId: currentPage.id,
-                getComp,
-                isPrevEnabled: Boolean(prevPage),
-                isNextEnabled: Boolean(nextPage),
-                onGoPrev: () => {
-                  if (!prevPage) return;
-                  store.setCurrentPage(prevPage.id);
-                  store.clearSelectedContainer();
-                },
-                onGoNext: () => {
-                  if (!nextPage) return;
-                  store.setCurrentPage(nextPage.id);
-                  store.clearSelectedContainer();
-                },
-                onCreateNextPage: () => {
-                  store.requestCreatePageAfterCurrent();
-                },
-                isFullWindow,
-                onToggleFullWindow: () => {
-                  setIsFullWindow((isPrevFullWindow) => {
-                    const isNextFullWindow = !isPrevFullWindow;
-                    if (isNextFullWindow) {
-                      store.setPlayMode(true);
-                    }
-                    return isNextFullWindow;
-                  });
-                },
-              } as any)}
-            />
+        {!isFullWindow ? (
+          <Header
+            slidesStore={store}
+            backendStore={backendStore ?? null}
+            onEndpointSwitchStart={onEndpointSwitchStart}
+            config={{
+              isSlideNavigationButtonVisible: true,
+              isViewInsideGroupButtonVisible: Boolean(currentGroupId),
+            }}
+            onEvent={async (event) => {
+              if (event.type === 'viewInsideGroup') {
+                if (!currentGroupId || !slideCurrentId) return true;
+                onRequestOpenGroupView?.(currentGroupId, slideCurrentId);
+                return true;
+              }
+              if (event.type === 'viewOverview') {
+                onRequestOpenOverview?.();
+                return true;
+              }
+              return false;
+            }}
+          />
+        ) : null}
+        <div className="slide-system-body">
+          {isFullWindow ? (
+            <div className="slide-system-canvas-wrap">{canvasContent}</div>
           ) : (
-            <div className="slide-system-empty">
-              No page data
-              <button
-                className="slide-toolbar-btn"
-                type="button"
-                disabled={store.isSlidesInitializing}
-                onClick={() => {
-                  store.requestInitializeSlides(true);
-                }}
-              >
-                Refresh Slides
-              </button>
-            </div>
+            <PanelDual orientation="vertical" initialWidth={260}>
+              <div className="slide-system-tree-wrap">
+                <SlideSingleTreeView store={store} />
+              </div>
+              <div className="slide-system-canvas-wrap">{canvasContent}</div>
+            </PanelDual>
           )}
         </div>
       </div>
@@ -212,4 +225,4 @@ const Slides = observer(({
   );
 });
 
-export default Slides;
+export default SlideSingleView;

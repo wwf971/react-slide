@@ -32,6 +32,7 @@ const CompSwitcher = observer(({
   onConfirm,
 }: any) => {
   const inputRef = useRef<any>(null);
+  const isOptionConfirmingRef = useRef(false);
   const [selectedOptionIndex, setSelectedOptionIndex] = useState<number>(-1);
   const prevOptionCountRef = useRef<number>(0);
   const safeTextValue = `${textValue ?? ''}`;
@@ -176,6 +177,7 @@ const CompSwitcher = observer(({
         }}
         onBlur={() => {
           if (isReadOnly) return;
+          if (isOptionConfirmingRef.current) return;
           if (!safeTextValue.trim()) {
             onCancel?.();
             return;
@@ -231,8 +233,10 @@ const CompSwitcher = observer(({
                 key={option.optionType === 'script' ? option.scriptCommand : option.compName}
                 className={`slide-switcher-option ${optionIndex === selectedOptionIndex ? 'is-selected' : ''}`}
                 type="button"
-                onMouseDown={(event) => {
+                onPointerDown={(event) => {
                   event.preventDefault();
+                  event.stopPropagation();
+                  isOptionConfirmingRef.current = true;
                   setSelectedOptionIndex(optionIndex);
                   if (option.optionType === 'script') {
                     requestConfirmCompScript();

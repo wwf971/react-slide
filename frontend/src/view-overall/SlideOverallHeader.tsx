@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { authStore } from '../auth/authStore';
 import DbSwitcher from '../backend/DbSwitcher';
-import './SlidesOverviewHeader.css';
+import './SlideOverallHeader.css';
 
-const SlidesOverviewHeader = observer(({
+const SlideOverallHeader = observer(({
   slidesGroupStore,
   backendStore = null,
   onEndpointSwitchStart,
@@ -128,4 +128,4 @@ const SlidesOverviewHeader = observer(({
   );
 });
 
-export default SlidesOverviewHeader;
+export default SlideOverallHeader;

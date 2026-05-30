@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite frontend --config frontend/vite.config.js",
     "build": "rm -rf dist frontend/dist && vite build frontend --config frontend/vite.config.js --outDir build",
-    "build:deploy": "rm -rf dist frontend/dist && VITE_APP_BASE_PATH=/slides/ vite build frontend --config frontend/vite.config.js --outDir build",
+    "build:deploy": "rm -rf dist frontend/dist && VITE_APP_BASE_PATH=/slides/ vite build frontend --config frontend/vite.config.js --outDir build && pnpm run build:backend",
+    "build:backend": "rm -rf backend/build && esbuild backend/server.js --bundle --platform=node --format=esm --target=node24 --external:express --external:cors --external:pg --external:./config.0.js --outfile=backend/build/server.js",
     "lint": "eslint --config frontend/eslint.config.js frontend/src",
     "preview": "vite preview frontend --config frontend/vite.config.js",
     "slides": "node backend/server.js"
@@ -29,6 +30,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
+    "esbuild": "^0.28.0",
     "eslint": "^10.2.1",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

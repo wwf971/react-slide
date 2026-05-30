@@ -182,6 +182,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   const sceneResourceId = data?.sceneResourceId ?? '';
   const sceneVersion = data?.sceneVersion ?? 1;
   const sceneViewport = data?.sceneViewport ?? null;
+  const isLayoutHidden = data?.isLayoutHidden !== false;
   sceneResourceIdRef.current = sceneResourceId;
 
   useEffect(() => {
@@ -506,6 +507,13 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     });
   };
 
+  const handleToggleLayoutHidden = () => {
+    if (isReadOnly) return;
+    store.requestContainerCompDataUpdate(containerId, {
+      isLayoutHidden: !isLayoutHidden,
+    });
+  };
+
   const queueSaveElements = (
     elements: any,
     files: any,
@@ -561,7 +569,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
 
   return (
     <div
-      className="slide-excalidraw-root"
+      className={`slide-excalidraw-root ${isLayoutHidden ? 'is-layout-hidden' : ''}`}
       ref={rootElementRef}
       onContextMenuCapture={(event) => {
         event.stopPropagation();
@@ -722,6 +730,14 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           }}
         >
           +
+        </button>
+        <button
+          className={`slide-excalidraw-mode-btn ${isLayoutHidden ? 'is-play' : ''}`}
+          type="button"
+          disabled={isReadOnly}
+          onClick={handleToggleLayoutHidden}
+        >
+          Hide Layout
         </button>
       </div>
       <div className="slide-excalidraw-debug-panel">

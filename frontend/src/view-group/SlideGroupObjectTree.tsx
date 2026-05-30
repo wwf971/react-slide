@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { FolderIcon, InfoIconWithTooltip, Menu, TreeView } from '@wwf971/react-comp-misc';
-import { normalizeFolderPath, normalizePermanentFolderPath } from './groupViewTreeUtils';
+import { normalizeFolderPath, normalizePermanentFolderPath } from './slideGroupTreeUtils';
 
 const toTreeData = (groupData, slideNameById, expandedFolderById, missingSlideIdMap) => {
   const itemById = {};
@@ -152,7 +152,7 @@ const toTreeData = (groupData, slideNameById, expandedFolderById, missingSlideId
   };
 };
 
-const GroupViewObjectTree = ({
+const SlideGroupObjectTree = ({
   groupData,
   slideNameById,
   selectedSlideId,
@@ -305,85 +305,94 @@ const GroupViewObjectTree = ({
 
       {menuState ? (
         <Menu
-          items={(() => {
-            if (menuState.menuType === 'empty-tree') {
-              return [{ type: 'item', name: 'New Slide At Root', data: { action: 'create-empty-slide' } }];
-            }
-            if (menuState.menuType === 'folder') {
-              const persistActionItem = menuState.isPersistingSelf
-                ? { type: 'item', name: 'Cancel Persisting', data: { action: 'cancel-persisting-folder' } }
-                : {
-                  type: 'item',
-                  name: (
-                    <span className="group-view-tree-menu-info">
-                      <span>Set Persisting</span>
-                      <InfoIconWithTooltip
-                        tooltipText="Persisting folder remains in tree even when no slides exist under this path."
-                        width={12}
-                        height={12}
-                      />
-                    </span>
-                  ),
-                  data: { action: 'set-persisting-folder' },
-                };
+          data={{
+            items: (() => {
+              if (menuState.menuType === 'empty-tree') {
+                return [{ id: 'create-empty-slide', label: 'New Slide At Root', data: { action: 'create-empty-slide' } }];
+              }
+              if (menuState.menuType === 'folder') {
+                const persistActionItem = menuState.isPersistingSelf
+                  ? { id: 'cancel-persisting-folder', label: 'Cancel Persisting', data: { action: 'cancel-persisting-folder' } }
+                  : {
+                    id: 'set-persisting-folder',
+                    label: (
+                      <span className="group-view-tree-menu-info">
+                        <span>Set Persisting</span>
+                        <InfoIconWithTooltip
+                          tooltipText="Persisting folder remains in tree even when no slides exist under this path."
+                          width={12}
+                          height={12}
+                        />
+                      </span>
+                    ),
+                    data: { action: 'set-persisting-folder' },
+                  };
+                return [
+                  { id: 'create-under-folder', label: 'New Slide', data: { action: 'create-under-folder' } },
+                  persistActionItem,
+                ];
+              }
               return [
-                { type: 'item', name: 'New Slide', data: { action: 'create-under-folder' } },
-                persistActionItem,
+                { id: 'delete-slide', label: 'Delete', data: { action: 'delete-slide' } },
+                { id: 'exclude-slide', label: 'Exclude from Group', data: { action: 'exclude-slide' } },
+                { id: 'change-path', label: 'Change Path', data: { action: 'change-path' } },
               ];
-            }
-            return [
-              { type: 'item', name: 'Delete', data: { action: 'delete-slide' } },
-              { type: 'item', name: 'Exclude from Group', data: { action: 'exclude-slide' } },
-              { type: 'item', name: 'Change Path', data: { action: 'change-path' } },
-            ];
-          })()}
-          position={{ x: menuState.x, y: menuState.y }}
-          onClose={() => setMenuState(null)}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            const backdropElement = event.currentTarget;
-            backdropElement.style.pointerEvents = 'none';
-            const clickedElement = document.elementFromPoint(event.clientX, event.clientY);
-            backdropElement.style.pointerEvents = '';
-            const rowElement = clickedElement?.closest?.('.tree-view-row[data-tree-item-id]');
-            if (rowElement) {
-              const rowItemId = `${rowElement.getAttribute('data-tree-item-id') ?? ''}`.trim();
-              const isOpened = openMenuForTreeItemId(rowItemId, event.clientX, event.clientY);
-              if (isOpened) return;
-            }
-
-            const slideElement = clickedElement?.closest?.('[data-tree-node-type="slide"]');
-            if (slideElement) {
-              const slideId = `${slideElement.getAttribute('data-slide-id') ?? ''}`.trim();
-              const path = `${slideElement.getAttribute('data-path') ?? ''}`.trim();
-              if (slideId) onSelectSlide(slideId);
-              openContextMenuAt(event.clientX, event.clientY, {
-                slideId,
-                path,
-                menuType: 'slide',
-              });
-              return;
-            }
-            const folderElement = clickedElement?.closest?.('[data-tree-node-type="folder"]');
-            if (folderElement) {
-              const path = `${folderElement.getAttribute('data-path') ?? ''}`.trim();
-              const isPersistingSelf = `${folderElement.getAttribute('data-is-persisting-self') ?? ''}` === '1';
-              openContextMenuAt(event.clientX, event.clientY, {
-                path,
-                menuType: 'folder',
-                isPersistingSelf,
-              });
-              return;
-            }
-            const inTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
-            if (!inTreeWrap) {
+            })(),
+            position: { x: menuState.x, y: menuState.y },
+          }}
+          onEvent={(eventType, eventData) => {
+            if (eventType === 'close') {
               setMenuState(null);
               return;
             }
-            openContextMenuAt(event.clientX, event.clientY, { menuType: 'empty-tree' });
-          }}
-          onItemClick={(item) => {
+            if (eventType === 'backdropContextMenu') {
+              const event = eventData.event;
+              event.preventDefault();
+              event.stopPropagation();
+              const backdropElement = event.currentTarget;
+              backdropElement.style.pointerEvents = 'none';
+              const clickedElement = document.elementFromPoint(event.clientX, event.clientY);
+              backdropElement.style.pointerEvents = '';
+              const rowElement = clickedElement?.closest?.('.tree-view-row[data-tree-item-id]');
+              if (rowElement) {
+                const rowItemId = `${rowElement.getAttribute('data-tree-item-id') ?? ''}`.trim();
+                const isOpened = openMenuForTreeItemId(rowItemId, event.clientX, event.clientY);
+                if (isOpened) return;
+              }
+
+              const slideElement = clickedElement?.closest?.('[data-tree-node-type="slide"]');
+              if (slideElement) {
+                const slideId = `${slideElement.getAttribute('data-slide-id') ?? ''}`.trim();
+                const path = `${slideElement.getAttribute('data-path') ?? ''}`.trim();
+                if (slideId) onSelectSlide(slideId);
+                openContextMenuAt(event.clientX, event.clientY, {
+                  slideId,
+                  path,
+                  menuType: 'slide',
+                });
+                return;
+              }
+              const folderElement = clickedElement?.closest?.('[data-tree-node-type="folder"]');
+              if (folderElement) {
+                const path = `${folderElement.getAttribute('data-path') ?? ''}`.trim();
+                const isPersistingSelf = `${folderElement.getAttribute('data-is-persisting-self') ?? ''}` === '1';
+                openContextMenuAt(event.clientX, event.clientY, {
+                  path,
+                  menuType: 'folder',
+                  isPersistingSelf,
+                });
+                return;
+              }
+              const inTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
+              if (!inTreeWrap) {
+                setMenuState(null);
+                return;
+              }
+              openContextMenuAt(event.clientX, event.clientY, { menuType: 'empty-tree' });
+              return;
+            }
+            if (eventType !== 'itemClick') return;
+            const item = eventData.item;
             if (item?.data?.action === 'create-empty-slide') {
               onRequestCreateSlideUnderFolder('');
               setMenuState(null);
@@ -425,4 +434,4 @@ const GroupViewObjectTree = ({
   );
 };
 
-export default GroupViewObjectTree;
+export default SlideGroupObjectTree;

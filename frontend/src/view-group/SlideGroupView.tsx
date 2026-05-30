@@ -5,9 +5,9 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SlideStoreProvider } from '../store/slidesStore';
 import Header from '../layout/Header';
 import Page from '../page/Page';
-import GroupViewObjectTree from './GroupViewObjectTree';
-import { normalizeFolderPath } from './groupViewTreeUtils';
-import './GroupViewPage.css';
+import SlideGroupObjectTree from './SlideGroupObjectTree';
+import { normalizeFolderPath } from './slideGroupTreeUtils';
+import './SlideGroupView.css';
 
 const getFolderPathText = (pathRaw = '') => {
   const normalizedPath = normalizeFolderPath(pathRaw);
@@ -15,16 +15,25 @@ const getFolderPathText = (pathRaw = '') => {
   return `/${normalizedPath}/`;
 };
 
-const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
+const SlideGroupView = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   const navigate = useNavigate();
   const { groupId: groupIdRaw } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const groupId = `${groupIdRaw ?? ''}`.trim();
+  const groupIdFromQuery = `${searchParams.get('groupId') ?? ''}`.trim();
+  const groupId = groupIdFromQuery || `${groupIdRaw ?? ''}`.trim();
   const [selectedSlideId, setSelectedSlideId] = useState('');
   const [pathChangeState, setPathChangeState] = useState(null);
   const [isStackMode, setIsStackMode] = useState(false);
   const rightPanelRef = useRef(null);
   const requestedSlideIdFromQuery = `${searchParams.get('selectedSlide') ?? ''}`.trim();
+
+  useEffect(() => {
+    if (!groupId) return;
+    if (groupIdFromQuery === groupId) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('groupId', groupId);
+    navigate(`/group?${nextParams.toString()}`, { replace: true });
+  }, [groupId, groupIdFromQuery, navigate, searchParams]);
 
   useEffect(() => {
     slidesStore.requestInitializeSlides();
@@ -270,7 +279,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
         </div>
 
         <div className="group-view-main">
-          <GroupViewObjectTree
+          <SlideGroupObjectTree
             groupData={groupData}
             slideNameById={slidesGroupStore.slideNameById}
             missingSlideIdMap={missingSlideIdMap}
@@ -327,7 +336,7 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
                 disabled={!selectedSlideId}
                 onClick={() => {
                   if (!selectedSlideId) return;
-                  navigate(`/slide/${encodeURIComponent(selectedSlideId)}`);
+                  navigate(`/slide?slideId=${encodeURIComponent(selectedSlideId)}`);
                 }}
               >
                 Open Slide
@@ -535,4 +544,4 @@ const GroupViewPage = observer(({ slidesGroupStore, slidesStore, getComp }) => {
   );
 });
 
-export default GroupViewPage;
+export default SlideGroupView;

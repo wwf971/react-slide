@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { observer } from 'mobx-react-lite';
-import { BrowserRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Login } from '@wwf971/react-comp-misc';
-import Slides from './slide/Slides';
-import SlidesOverview from './overview/SlidesOverview';
-import GroupViewPage from './group-view/GroupViewPage';
+import SlideSingleView from './view-single/SlideSingleView';
+import SlideOverallView from './view-overall/SlideOverallView';
+import SlideGroupView from './view-group/SlideGroupView';
 import CompMetadata from './comp_custom/CompMetadata';
 import CompTextSingleline from './comp_custom/CompTextSingleline';
 import CompTextMultline from './comp_custom/CompTextMultline';
@@ -42,21 +42,24 @@ const SlideRoutePage = observer(({
 }) => {
   const navigate = useNavigate();
   const params = useParams();
+  const [searchParams] = useSearchParams();
+  const querySlideId = `${searchParams.get('slideId') ?? ''}`.trim();
   const routeSlideId = `${params?.slideId ?? ''}`.trim();
+  const requestedSlideId = querySlideId || routeSlideId;
 
   return (
-    <Slides
+    <SlideSingleView
       store={slidesStore}
       backendStore={backendStore}
       getComp={getComp}
-      slideIdRequested={routeSlideId}
+      slideIdRequested={requestedSlideId}
       onEndpointSwitchStart={onEndpointSwitchStart}
       onRequestOpenGroupView={(groupId, slideId) => {
         const safeGroupId = `${groupId ?? ''}`.trim();
         const safeSlideId = `${slideId ?? ''}`.trim();
         if (!safeGroupId || !safeSlideId) return;
         navigate(
-          `/group/${encodeURIComponent(safeGroupId)}?selectedSlide=${encodeURIComponent(safeSlideId)}`,
+          `/group?groupId=${encodeURIComponent(safeGroupId)}&selectedSlide=${encodeURIComponent(safeSlideId)}`,
         );
       }}
       onRequestOpenOverview={() => {
@@ -65,8 +68,8 @@ const SlideRoutePage = observer(({
       onCurrentSlideIdChange={(nextSlideId) => {
         const nextRouteSlideId = `${nextSlideId ?? ''}`.trim();
         if (!nextRouteSlideId) return;
-        if (nextRouteSlideId === routeSlideId) return;
-        navigate(`/slide/${encodeURIComponent(nextRouteSlideId)}`, { replace: true });
+        if (nextRouteSlideId === querySlideId) return;
+        navigate(`/slide?slideId=${encodeURIComponent(nextRouteSlideId)}`, { replace: true });
       }}
     />
   );
@@ -85,7 +88,7 @@ const SlideRoutes = ({
         <Route
           path="/overview"
           element={(
-            <SlidesOverview
+            <SlideOverallView
               slidesStore={slidesStore}
               slidesGroupStore={slidesGroupStore}
               backendStore={backendStore}
@@ -94,12 +97,33 @@ const SlideRoutes = ({
           )}
         />
         <Route
-          path="/group/:groupId"
+          path="/group"
           element={(
-            <GroupViewPage
+            <SlideGroupView
               slidesGroupStore={slidesGroupStore}
               slidesStore={slidesStore}
               getComp={getComp}
+            />
+          )}
+        />
+        <Route
+          path="/group/:groupId"
+          element={(
+            <SlideGroupView
+              slidesGroupStore={slidesGroupStore}
+              slidesStore={slidesStore}
+              getComp={getComp}
+            />
+          )}
+        />
+        <Route
+          path="/slide"
+          element={(
+            <SlideRoutePage
+              slidesStore={slidesStore}
+              backendStore={backendStore}
+              getComp={getComp}
+              onEndpointSwitchStart={onEndpointSwitchStart}
             />
           )}
         />

@@ -49,7 +49,9 @@ const frontendIndexPath = resolve(frontendDistDir, 'index.html');
 const backendDumpDir = resolve(projectRootDir, 'data-dumps');
 const FRONTEND_ROUTE_PATTERNS = [
   /^\/overview\/?$/,
+  /^\/group\/?$/,
   /^\/group\/[^/]+\/?$/,
+  /^\/slide\/?$/,
   /^\/slide\/[^/]+\/?$/,
 ];
 
@@ -60,7 +62,8 @@ const getFrontendRouteErrorPayload = () => {
     data: {
       guide: {
         overview: '/overview/',
-        slide: '/slide/{slideId}',
+        group: '/group?groupId={groupId}',
+        slide: '/slide?slideId={slideId}',
       },
     },
   };
@@ -70,20 +73,6 @@ const getIsFrontendRoutePath = (pathValue = '') => {
   const pathText = `${pathValue ?? ''}`.trim();
   if (!pathText) return false;
   return FRONTEND_ROUTE_PATTERNS.some((pattern) => pattern.test(pathText));
-};
-
-const getGroupIdFromFrontendPath = (pathValue = '') => {
-  const pathText = `${pathValue ?? ''}`.trim();
-  const match = pathText.match(/^\/group\/([^/]+)\/?$/);
-  if (!match) return '';
-  return `${match[1] ?? ''}`.trim();
-};
-
-const getSlideIdFromFrontendPath = (pathValue = '') => {
-  const pathText = `${pathValue ?? ''}`.trim();
-  const match = pathText.match(/^\/slide\/([^/]+)\/?$/);
-  if (!match) return '';
-  return `${match[1] ?? ''}`.trim();
 };
 
 const getTimestampToken = () => {
@@ -569,12 +558,18 @@ const createSlideBackendApp = async () => {
   app.get(['/overview', '/overview/'], (_req, res) => {
     sendFrontendIndexHtml(res);
   });
-  app.get('/slide/:slideId', (_req, res) => {
-    const slideId = `${_req.params?.slideId ?? ''}`.trim();
+  app.get(['/slide', '/slide/'], (_req, res) => {
+    sendFrontendIndexHtml(res);
+  });
+  app.get('/slide/:slideId', (req, res) => {
+    const slideId = `${req.params?.slideId ?? ''}`.trim();
     if (!slideId) {
       sendError(res, 404, 'slide not found');
       return;
     }
+    res.redirect(302, `/slide?slideId=${encodeURIComponent(slideId)}`);
+  });
+  app.get(['/group', '/group/'], (_req, res) => {
     sendFrontendIndexHtml(res);
   });
   app.get('/group/:groupId', async (req, res) => {
@@ -583,7 +578,11 @@ const createSlideBackendApp = async () => {
       sendError(res, 404, 'slide-group not found');
       return;
     }
-    sendFrontendIndexHtml(res);
+    const selectedSlide = `${req.query?.selectedSlide ?? ''}`.trim();
+    const queryText = selectedSlide
+      ? `groupId=${encodeURIComponent(groupId)}&selectedSlide=${encodeURIComponent(selectedSlide)}`
+      : `groupId=${encodeURIComponent(groupId)}`;
+    res.redirect(302, `/group?${queryText}`);
   });
   app.use(express.static(frontendDistDir, {
     index: false,
@@ -622,7 +621,7 @@ const startSlideBackendServer = async () => {
     try {
       readFileSync(frontendIndexPath, 'utf8');
       console.info(`[slide-backend] overview: http://127.0.0.1:${port}/overview/`);
-      console.info(`[slide-backend] slide: http://127.0.0.1:${port}/slide/{slideId}`);
+      console.info(`[slide-backend] slide: http://127.0.0.1:${port}/slide?slideId={slideId}`);
       console.info(`[slide-backend] note: '/' returns JSON error`);
     } catch {
       console.info('[slide-backend] frontend build missing, run: pnpm build');

@@ -229,77 +229,6 @@
   text-align: center;
 }
 
-.slide-toolbar-menu {
-  position: relative;
-  display: inline-flex;
-  align-items: stretch;
-}
-
-.slide-toolbar-menu-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 26px;
-  padding: 2px 8px;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
-  background: #ffffff;
-  color: #202020;
-  font-size: 13px;
-  line-height: 1.2;
-  cursor: pointer;
-  box-sizing: border-box;
-  white-space: nowrap;
-}
-
-.slide-toolbar-menu-button:hover {
-  background: #f6f6f6;
-}
-
-.slide-toolbar-menu-button:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
-.slide-toolbar-menu-list {
-  position: absolute;
-  top: calc(100% + 2px);
-  right: 0;
-  min-width: 130px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 2px;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
-  background: #ffffff;
-  z-index: 70;
-}
-
-.slide-toolbar-menu-item {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 4px 7px;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: #ffffff;
-  color: #222222;
-  font-size: 13px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.slide-toolbar-menu-item:hover {
-  background: #f6f6f6;
-}
-
-.slide-toolbar-menu-item:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
 .slide-toolbar-page {
   display: flex;
   align-items: center;
@@ -386,17 +315,48 @@
 
 .slide-system-canvas-wrap {
   flex: 1;
+  width: 100%;
+  height: 100%;
   min-height: 0;
+  min-width: 0;
   border: 1px solid #d5d5d5;
   background: #f4f4f4;
   padding: 10px;
   position: relative;
+  box-sizing: border-box;
 }
 
 .slide-system-root.is-full-window .slide-system-canvas-wrap {
   border: 0;
   padding: 0;
   background: #000000;
+}
+
+.slide-system-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.slide-system-root.is-full-window .slide-system-body {
+  width: 100%;
+  height: 100%;
+}
+
+.slide-system-body .panel-dual {
+  border: 0;
+  background: transparent;
+}
+
+.slide-system-body .panel-dual-pane {
+  overflow: hidden;
+}
+
+.slide-system-tree-wrap {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .slide-system-empty {
@@ -955,6 +915,10 @@
   height: 100%;
   position: relative;
   background: #ffffff;
+}
+
+.slide-excalidraw-root.is-layout-hidden footer.App-toolbar {
+  display: none;
 }
 
 .slide-excalidraw-loading {

@@ -6,7 +6,7 @@ Current command:
 
 `/title My Title`
 
-This creates a `CompTextSingleline` component with title-sized text and places it near the top of the page.
+This creates a `CompTextSingleLine` component with title-sized text and places it near the top of the page.
 
 Flow:
 

@@ -1,6 +1,6 @@
 import { EditableValueComp } from '@wwf971/react-comp-misc';
 
-const SlidesOverviewNameCell = ({
+const SlideOverallNameCell = ({
   name = '',
   rowId = '',
   configKey = '',
@@ -35,4 +35,4 @@ const SlidesOverviewNameCell = ({
   );
 };
 
-export default SlidesOverviewNameCell;
+export default SlideOverallNameCell;

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import Slides from './Slides';
+import SlideSingleView from './SlideSingleView';
 import CompMetadata from '../comp_custom/CompMetadata';
 import CompTextSingleline from '../comp_custom/CompTextSingleline';
 import CompTextMultline from '../comp_custom/CompTextMultline';
@@ -23,12 +23,12 @@ const resolveComp = (compName) => {
   return CompMetadata;
 };
 
-const SlidesExample = () => {
+const SlideSingleExample = () => {
   const store = useMemo(() => createDemoSlideStore(), []);
   const backendStore = useMemo(() => createBackendStore(), []);
   const getComp = useMemo(() => resolveComp, []);
 
-  return <Slides store={store} backendStore={backendStore} getComp={getComp} />;
+  return <SlideSingleView store={store} backendStore={backendStore} getComp={getComp} />;
 };
 
-export default SlidesExample;
+export default SlideSingleExample;
