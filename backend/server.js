@@ -10,6 +10,7 @@ import {
   findObjectStoragePresetByKey,
   AUTH_USERNAME,
   AUTH_PASSWORD,
+  AUTH_CONFIG,
 } from './config.js';
 import { createSlideAuth } from './auth.js';
 import {
@@ -138,6 +139,7 @@ const createSlideBackendApp = async () => {
   const slideAuth = createSlideAuth({
     username: AUTH_USERNAME,
     password: AUTH_PASSWORD,
+    authConfig: AUTH_CONFIG,
   });
 
   const getCurrentPreset = () => {
@@ -190,7 +192,7 @@ const createSlideBackendApp = async () => {
   slideAuth.registerAuthRoutes(app);
   app.use('/api/slide', slideAuth.requireAuth);
 
-  app.get('/api/slide/health', async (_req, res) => {
+  const handleSlideHealth = async (_req, res) => {
     try {
       await ensureBackendStoreReady(storeContext);
       sendSuccess(res, { db: storeContext.info });
@@ -202,9 +204,11 @@ const createSlideBackendApp = async () => {
         { db: storeContext.info },
       );
     }
-  });
+  };
+  app.get('/api/slide/health', handleSlideHealth);
+  app.post('/api/slide/health', handleSlideHealth);
 
-  app.get('/api/slide/database/presets', async (_req, res) => {
+  const handleSlideDatabasePresets = async (_req, res) => {
     const currentPreset = getCurrentPreset();
     const databaseItems = await Promise.all(
       OBJECT_STORAGE_LIST.map(async (preset) => {
@@ -233,7 +237,9 @@ const createSlideBackendApp = async () => {
       endpointKeyCurrent: `${currentPreset?.KEY ?? ''}`,
       databaseItems,
     });
-  });
+  };
+  app.get('/api/slide/database/presets', handleSlideDatabasePresets);
+  app.post('/api/slide/database/presets', handleSlideDatabasePresets);
 
   app.post('/api/slide/database/test', async (req, res) => {
     const presetKey = `${req.body?.databaseKey ?? ''}`.trim();
@@ -317,25 +323,29 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.get('/api/slide/slides', async (_req, res) => {
+  const handleSlideList = async (_req, res) => {
     try {
       const slides = await listSlides(storeContext);
       sendSuccess(res, { slides });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to list slides');
     }
-  });
+  };
+  app.get('/api/slide/slides', handleSlideList);
+  app.post('/api/slide/slides/list', handleSlideList);
 
-  app.get('/api/slide/groups/overview', async (_req, res) => {
+  const handleSlideGroupsOverview = async (_req, res) => {
     try {
       const data = await getSlideGroupsOverview(storeContext);
       sendSuccess(res, data);
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to load slide-group overview');
     }
-  });
+  };
+  app.get('/api/slide/groups/overview', handleSlideGroupsOverview);
+  app.post('/api/slide/groups/overview', handleSlideGroupsOverview);
 
-  app.get('/api/slide/groups', async (_req, res) => {
+  const handleSlideGroupsList = async (_req, res) => {
     try {
       const groups = await listSlideGroups(storeContext);
       sendSuccess(res, {
@@ -350,7 +360,9 @@ const createSlideBackendApp = async () => {
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to list slide-groups');
     }
-  });
+  };
+  app.get('/api/slide/groups', handleSlideGroupsList);
+  app.post('/api/slide/groups/list', handleSlideGroupsList);
 
   app.post('/api/slide/groups', async (req, res) => {
     try {
@@ -420,14 +432,16 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.get('/api/slide/slides/:slideId/data', async (req, res) => {
+  const handleSlideData = async (req, res) => {
     try {
       const result = await getSlideSnapshot(storeContext, req.params.slideId);
       sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to load slide data');
     }
-  });
+  };
+  app.get('/api/slide/slides/:slideId/data', handleSlideData);
+  app.post('/api/slide/slides/:slideId/data', handleSlideData);
 
   app.post('/api/slide/slides/:slideId/save-dirty', async (req, res) => {
     try {
@@ -483,14 +497,16 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.get('/api/slide/resources/:resourceId/bytes', async (req, res) => {
+  const handleResourceBytes = async (req, res) => {
     try {
       const result = await getResourceBytes(storeContext, req.params.resourceId);
       sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to load resource bytes');
     }
-  });
+  };
+  app.get('/api/slide/resources/:resourceId/bytes', handleResourceBytes);
+  app.post('/api/slide/resources/:resourceId/bytes/read', handleResourceBytes);
 
   app.post('/api/slide/resources/:resourceId/text', async (req, res) => {
     try {
@@ -501,14 +517,16 @@ const createSlideBackendApp = async () => {
     }
   });
 
-  app.get('/api/slide/resources/:resourceId/text', async (req, res) => {
+  const handleResourceText = async (req, res) => {
     try {
       const result = await getResourceText(storeContext, req.params.resourceId);
       sendStoreResult(res, result, { errorStatus: 404 });
     } catch (error) {
       sendError(res, 500, error instanceof Error ? error.message : 'failed to load resource text');
     }
-  });
+  };
+  app.get('/api/slide/resources/:resourceId/text', handleResourceText);
+  app.post('/api/slide/resources/:resourceId/text/read', handleResourceText);
 
   app.delete('/api/slide/resources/:resourceId', async (req, res) => {
     try {

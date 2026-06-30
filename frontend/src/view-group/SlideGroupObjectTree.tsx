@@ -217,12 +217,12 @@ const SlideGroupObjectTree = ({
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        const clickedElement = event.target;
-        const isOnTreeRow = Boolean(clickedElement?.closest?.('.tree-view-row'));
+        const clickedEl = event.target as HTMLElement | null;
+        const isOnTreeRow = Boolean(clickedEl?.closest?.('.tree-view-row'));
         if (isOnTreeRow) {
           return;
         }
-        const isInTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
+        const isInTreeWrap = Boolean(clickedEl?.closest?.('[data-group-view-tree-wrap="true"]'));
         if (!isInTreeWrap) {
           setMenuState(null);
           return;
@@ -232,73 +232,83 @@ const SlideGroupObjectTree = ({
     >
       <div className="group-view-tree-wrap" data-group-view-tree-wrap="true">
         <TreeView
-          rootItemIds={treeData.rootItemIds}
-          getItemDataById={(itemId) => treeData.itemById[itemId]}
-          selectedItemId={selectedTreeItemId}
-          isToggleExpandOnItemClick={true}
-          onDataChangeRequest={async (type, params) => {
-            if (type !== 'toggle-expand') return { code: 0 };
-            const itemId = `${params?.itemId ?? ''}`.trim();
-            const nextIsExpanded = params?.nextIsExpanded === true;
-            setExpandedFolderById((prevValue) => ({
-              ...prevValue,
-              [itemId]: nextIsExpanded,
-            }));
-            return { code: 0 };
+          data={{
+            itemRootIds: treeData.rootItemIds,
+            itemDataById: treeData.itemById,
+            itemSelectedId: selectedTreeItemId,
           }}
-          onItemClick={async (_itemId, itemData) => {
-            if (itemData?.nodeType !== 'slide') return;
-            const slideId = `${itemData?.slideId ?? ''}`.trim();
-            if (!slideId) return;
-            onSelectSlide(slideId);
-          }}
-          onItemContextMenu={async (_itemId, itemData, event) => {
-            if (!itemData) return;
-            if (itemData.nodeType === 'slide') {
-              const slideId = `${itemData?.slideId ?? ''}`.trim();
-              if (slideId) onSelectSlide(slideId);
-              openContextMenuAt(event.clientX, event.clientY, {
-                slideId,
-                path: `${itemData?.path ?? ''}`.trim(),
-                menuType: 'slide',
-              });
-              return;
-            }
-            openContextMenuAt(event.clientX, event.clientY, {
-              path: `${itemData?.path ?? ''}`.trim(),
-              menuType: 'folder',
-              isPersistingSelf: itemData?.isPersistingSelf === true,
-            });
-          }}
-          getItemComp={(itemData) => {
-            if (itemData?.nodeType === 'slide') {
-              return ({ itemData: nodeData }) => (
+          config={{
+            isToggleExpandOnItemClick: true,
+            getItemComp: (itemData: any) => {
+              if (itemData?.nodeType === 'slide') {
+                return ({ itemData: nodeData }: any) => (
+                  <div
+                    className="group-view-tree-item-slide"
+                    data-tree-node-type="slide"
+                    data-slide-id={`${nodeData?.slideId ?? ''}`.trim()}
+                    data-path={`${nodeData?.path ?? ''}`.trim()}
+                  >
+                    <span className="group-view-tree-item-slide-text">{`${nodeData?.text ?? ''}`.trim()}</span>
+                    {nodeData?.isMissing ? (
+                      <span className="group-view-tree-item-missing-mark" title="slide not found">!</span>
+                    ) : null}
+                  </div>
+                );
+              }
+              return ({ itemData: nodeData }: any) => (
                 <div
-                  className="group-view-tree-item-slide"
-                  data-tree-node-type="slide"
-                  data-slide-id={`${nodeData?.slideId ?? ''}`.trim()}
+                  className="group-view-tree-item-folder"
+                  data-tree-node-type="folder"
                   data-path={`${nodeData?.path ?? ''}`.trim()}
+                  data-is-persisting-self={nodeData?.isPersistingSelf ? '1' : '0'}
                 >
-                  <span className="group-view-tree-item-slide-text">{`${nodeData?.text ?? ''}`.trim()}</span>
-                  {nodeData?.isMissing ? (
-                    <span className="group-view-tree-item-missing-mark" title="slide not found">!</span>
-                  ) : null}
+                  <span className="group-view-tree-item-folder-icon">
+                    <FolderIcon width={14} height={14} />
+                  </span>
+                  <span>{`${nodeData?.text ?? ''}`.trim()}</span>
                 </div>
               );
+            },
+          }}
+          onEvent={async (eventType: string, eventData: any) => {
+            if (eventType === 'toggleExpand') {
+              const itemId = `${eventData?.itemId ?? ''}`.trim();
+              const nextIsExpanded = eventData?.nextIsExpanded === true;
+              setExpandedFolderById((prevValue) => ({
+                ...prevValue,
+                [itemId]: nextIsExpanded,
+              }));
+              return { code: 0 };
             }
-            return ({ itemData: nodeData }) => (
-              <div
-                className="group-view-tree-item-folder"
-                data-tree-node-type="folder"
-                data-path={`${nodeData?.path ?? ''}`.trim()}
-                data-is-persisting-self={nodeData?.isPersistingSelf ? '1' : '0'}
-              >
-                <span className="group-view-tree-item-folder-icon">
-                  <FolderIcon width={14} height={14} />
-                </span>
-                <span>{`${nodeData?.text ?? ''}`.trim()}</span>
-              </div>
-            );
+            if (eventType === 'itemClick') {
+              const itemData = eventData?.itemData;
+              if (itemData?.nodeType !== 'slide') return { code: 0 };
+              const slideId = `${itemData?.slideId ?? ''}`.trim();
+              if (!slideId) return { code: 0 };
+              onSelectSlide(slideId);
+              return { code: 0 };
+            }
+            if (eventType === 'itemContextMenu') {
+              const itemData = eventData?.itemData;
+              const event = eventData?.event;
+              if (!itemData) return { code: 0 };
+              if (itemData.nodeType === 'slide') {
+                const slideId = `${itemData?.slideId ?? ''}`.trim();
+                if (slideId) onSelectSlide(slideId);
+                openContextMenuAt(event.clientX, event.clientY, {
+                  slideId,
+                  path: `${itemData?.path ?? ''}`.trim(),
+                  menuType: 'slide',
+                });
+                return { code: 0 };
+              }
+              openContextMenuAt(event.clientX, event.clientY, {
+                path: `${itemData?.path ?? ''}`.trim(),
+                menuType: 'folder',
+                isPersistingSelf: itemData?.isPersistingSelf === true,
+              });
+            }
+            return { code: 0 };
           }}
         />
       </div>
@@ -338,10 +348,13 @@ const SlideGroupObjectTree = ({
                 { id: 'change-path', label: 'Change Path', data: { action: 'change-path' } },
               ];
             })(),
-            position: { x: menuState.x, y: menuState.y },
+          }}
+          config={{
+            isOpen: true,
+            posOpen: { x: menuState.x, y: menuState.y },
           }}
           onEvent={(eventType, eventData) => {
-            if (eventType === 'close') {
+            if (eventType === 'closeRequest') {
               setMenuState(null);
               return;
             }
@@ -351,16 +364,16 @@ const SlideGroupObjectTree = ({
               event.stopPropagation();
               const backdropElement = event.currentTarget;
               backdropElement.style.pointerEvents = 'none';
-              const clickedElement = document.elementFromPoint(event.clientX, event.clientY);
+              const clickedEl = document.elementFromPoint(event.clientX, event.clientY);
               backdropElement.style.pointerEvents = '';
-              const rowElement = clickedElement?.closest?.('.tree-view-row[data-tree-item-id]');
+              const rowElement = clickedEl?.closest?.('.tree-view-row[data-tree-item-id]');
               if (rowElement) {
                 const rowItemId = `${rowElement.getAttribute('data-tree-item-id') ?? ''}`.trim();
                 const isOpened = openMenuForTreeItemId(rowItemId, event.clientX, event.clientY);
                 if (isOpened) return;
               }
 
-              const slideElement = clickedElement?.closest?.('[data-tree-node-type="slide"]');
+              const slideElement = clickedEl?.closest?.('[data-tree-node-type="slide"]');
               if (slideElement) {
                 const slideId = `${slideElement.getAttribute('data-slide-id') ?? ''}`.trim();
                 const path = `${slideElement.getAttribute('data-path') ?? ''}`.trim();
@@ -372,7 +385,7 @@ const SlideGroupObjectTree = ({
                 });
                 return;
               }
-              const folderElement = clickedElement?.closest?.('[data-tree-node-type="folder"]');
+              const folderElement = clickedEl?.closest?.('[data-tree-node-type="folder"]');
               if (folderElement) {
                 const path = `${folderElement.getAttribute('data-path') ?? ''}`.trim();
                 const isPersistingSelf = `${folderElement.getAttribute('data-is-persisting-self') ?? ''}` === '1';
@@ -383,7 +396,7 @@ const SlideGroupObjectTree = ({
                 });
                 return;
               }
-              const inTreeWrap = Boolean(clickedElement?.closest?.('[data-group-view-tree-wrap="true"]'));
+              const inTreeWrap = Boolean(clickedEl?.closest?.('[data-group-view-tree-wrap="true"]'));
               if (!inTreeWrap) {
                 setMenuState(null);
                 return;

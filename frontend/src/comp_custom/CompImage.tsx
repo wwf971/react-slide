@@ -175,7 +175,6 @@ const CompImage = observer(
       {menuPosition && (
         <Menu
           data={{
-            position: menuPosition,
             items: [
               {
                 id: 'fill-container',
@@ -189,8 +188,12 @@ const CompImage = observer(
               },
             ],
           }}
+          config={{
+            isOpen: true,
+            posOpen: menuPosition,
+          }}
           onEvent={(eventType, eventData) => {
-            if (eventType === 'close') {
+            if (eventType === 'closeRequest') {
               setMenuPosition(null);
               return;
             }

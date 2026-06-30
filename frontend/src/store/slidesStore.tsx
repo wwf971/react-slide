@@ -280,7 +280,7 @@ class SlidesStore {
     const slideId = `${slideIdRaw || this.slideCurrentId || ''}`.trim();
     const rootItemIds = slideId ? [toSlideTreeNodeId('slide', slideId)] : [];
     const itemDataById: any = {};
-    const parentItemIdById: any = {};
+    const itemParentIdById: any = {};
     const expandedMap = this.getSlideTreeExpandedMap(slideId);
     const selectedContainerData = this.getContainerData(this.selectedContainerId);
     const selectedCompId = `${selectedContainerData?.compId ?? this.selectedCompId ?? ''}`.trim();
@@ -290,7 +290,7 @@ class SlidesStore {
       : (currentPageId ? toSlideTreeNodeId('page', currentPageId) : '');
 
     if (!slideId) {
-      return { rootItemIds: [], itemDataById, parentItemIdById, selectedItemId: '' };
+      return { rootItemIds: [], itemDataById, itemParentIdById, selectedItemId: '' };
     }
 
     const slideNodeId = toSlideTreeNodeId('slide', slideId);
@@ -318,7 +318,7 @@ class SlidesStore {
       const pageText = pageName ? `Page ${pageIndex + 1}(${pageName})` : `Page ${pageIndex + 1}`;
       const containerIds = (pageData?.containerIds ?? []).filter(Boolean);
       const containerNodeIds = containerIds.map((containerId) => toSlideTreeNodeId('container', containerId));
-      parentItemIdById[pageNodeId] = slideNodeId;
+      itemParentIdById[pageNodeId] = slideNodeId;
       itemDataById[pageNodeId] = {
         id: pageNodeId,
         text: pageText,
@@ -342,7 +342,7 @@ class SlidesStore {
         const containerData = this.getContainerData(containerId);
         const compId = `${containerData?.compId ?? ''}`.trim();
         const compNodeId = compId ? toSlideTreeNodeId('comp', compId) : '';
-        parentItemIdById[containerNodeId] = pageNodeId;
+        itemParentIdById[containerNodeId] = pageNodeId;
         itemDataById[containerNodeId] = {
           id: containerNodeId,
           text: `Container ${containerIndex + 1}`,
@@ -366,7 +366,7 @@ class SlidesStore {
             compId,
             `${resourceField.fieldName}:${resourceField.resourceId}`,
           );
-          parentItemIdById[resourceNodeId] = compNodeId;
+          itemParentIdById[resourceNodeId] = compNodeId;
           itemDataById[resourceNodeId] = {
             id: resourceNodeId,
             text: toResourceLabel(resourceField.fieldName, resourceField.resourceId),
@@ -384,7 +384,7 @@ class SlidesStore {
           };
           return resourceNodeId;
         });
-        parentItemIdById[compNodeId] = containerNodeId;
+        itemParentIdById[compNodeId] = containerNodeId;
         itemDataById[compNodeId] = {
           id: compNodeId,
           text: compData?.compName ?? 'Comp',
@@ -405,7 +405,7 @@ class SlidesStore {
     return {
       rootItemIds,
       itemDataById,
-      parentItemIdById,
+      itemParentIdById,
       selectedItemId,
     };
   }

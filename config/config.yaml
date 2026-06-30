@@ -1,0 +1,17 @@
+auth:
+  type: internal
+  users:
+    - username: example_rw
+      password: example_password
+      permission: RW
+    - username: example_r
+      password: example_read_password
+      permission: R
+# auth:
+#   type: "@wwf971/auth-jwt"
+#   ip: 127.0.0.1
+#   port: 9531
+#   service_id: react-slide
+#   read_permission_code: 1
+#   write_permission_code: 2
+#   default_permission: RW

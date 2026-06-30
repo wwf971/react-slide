@@ -1,3 +1,8 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { load as loadYaml } from 'js-yaml';
+
 const OBJECT_STORAGE_LOCAL = {
   KEY: 'OBJECT_STORAGE_LOCAL',
   LABEL: 'local',
@@ -14,7 +19,21 @@ const CONFIG_DEFAULT = {
   BACKEND_PORT: 9405,
   USERNAME: USERNAME,
   PASSWORD: PASSWORD,
+  auth: {
+    type: 'internal',
+    users: [
+      {
+        username: USERNAME,
+        password: PASSWORD,
+        permission: 'RW',
+      },
+    ],
+  },
 };
+
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT_DIR = path.resolve(CURRENT_DIR, '..');
+const CONFIG_DIR = path.join(PROJECT_ROOT_DIR, 'config');
 
 const normalizeObjectStoragePreset = (entry, fallbackKey = '') => {
   const serviceUrl = `${entry?.SERVICE_URL ?? entry?.serviceUrl ?? ''}`.trim().replace(/\/+$/, '');
@@ -38,11 +57,45 @@ const loadLocalConfig = async () => {
   }
 };
 
+const isPlainObject = (value) => {
+  return value && typeof value === 'object' && !Array.isArray(value);
+};
+
+const deepMerge = (baseValue, overrideValue) => {
+  if (isPlainObject(baseValue) && isPlainObject(overrideValue)) {
+    const merged = { ...baseValue };
+    Object.entries(overrideValue).forEach(([key, value]) => {
+      merged[key] = deepMerge(merged[key], value);
+    });
+    return merged;
+  }
+  return overrideValue === undefined || overrideValue === null ? baseValue : overrideValue;
+};
+
+const loadYamlConfigFile = async (filePath) => {
+  try {
+    const fileText = await fs.readFile(filePath, 'utf8');
+    const config = loadYaml(fileText) ?? {};
+    return isPlainObject(config) ? config : {};
+  } catch {
+    return {};
+  }
+};
+
+const loadYamlConfig = async () => {
+  const exampleConfig = await loadYamlConfigFile(path.join(CONFIG_DIR, 'config.yaml'));
+  const localConfig = await loadYamlConfigFile(path.join(CONFIG_DIR, 'config.0.yaml'));
+  return deepMerge(exampleConfig, localConfig);
+};
+
+const yamlConfig = await loadYamlConfig();
 const localConfig = await loadLocalConfig();
 
 const configWithDefault = {
   ...CONFIG_DEFAULT,
+  ...yamlConfig,
   ...localConfig,
+  auth: deepMerge(deepMerge(CONFIG_DEFAULT.auth, yamlConfig.auth), localConfig.auth),
 };
 
 const objectStorageListFromConfig = Array.isArray(configWithDefault.OBJECT_STORAGE_LIST)
@@ -71,6 +124,9 @@ const BACKEND_PORT = Number.isFinite(Number(configWithDefault.BACKEND_PORT))
 
 const AUTH_USERNAME = `${configWithDefault.USERNAME ?? ''}`.trim() || USERNAME;
 const AUTH_PASSWORD = `${configWithDefault.PASSWORD ?? ''}`.trim() || PASSWORD;
+const AUTH_CONFIG = isPlainObject(configWithDefault.auth)
+  ? configWithDefault.auth
+  : CONFIG_DEFAULT.auth;
 
 const findObjectStoragePresetByKey = (presetKeyRaw = '') => {
   const presetKey = `${presetKeyRaw ?? ''}`.trim();
@@ -85,6 +141,7 @@ export {
   BACKEND_PORT,
   AUTH_USERNAME,
   AUTH_PASSWORD,
+  AUTH_CONFIG,
   normalizeObjectStoragePreset,
   findObjectStoragePresetByKey,
 };

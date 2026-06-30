@@ -124,7 +124,9 @@ class SlidesPersistStore {
       return this.listSlidesPendingPromise;
     }
     const listSlidesPromise = (async () => {
-      const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
+      const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides/list`, {
+        method: 'POST',
+      });
       if (result.code !== 0) {
         this.listSlidesFailedAt = Date.now();
         const backendMessage = result.message;
@@ -165,6 +167,9 @@ class SlidesPersistStore {
   async getSlideData(slideId: string) {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/data`,
+      {
+        method: 'POST',
+      },
     );
     if (result.code !== 0) {
       return { ok: false, data: null, message: 'Failed to load slide data' };
@@ -284,7 +289,10 @@ class SlidesPersistStore {
     const cached = this.resourceBytesById[resourceId];
     if (cached) return { ok: true, base64: cached };
     const result = await this.requestJson(
-      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes`,
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes/read`,
+      {
+        method: 'POST',
+      },
     );
     if (result.code !== 0) {
       return { ok: false, message: result.message || 'Failed to load resource bytes' };
@@ -313,7 +321,10 @@ class SlidesPersistStore {
 
   async getResourceText(resourceId: string) {
     const result = await this.requestJson(
-      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text`,
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text/read`,
+      {
+        method: 'POST',
+      },
     );
     if (result.code !== 0) {
       return { ok: false, message: result.message || 'Failed to load resource text' };
@@ -347,7 +358,9 @@ class SlidesPersistStore {
   }
 
   async getSlideGroupOwnerMap() {
-    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/groups/overview`);
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/groups/overview`, {
+      method: 'POST',
+    });
     if (result.code !== 0) {
       return { ok: false, ownerGroupIdBySlideId: {} };
     }

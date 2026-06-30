@@ -16,7 +16,7 @@ import CompUrl from './comp_custom/CompUrl';
 import { createDemoSlideStore } from './store/slidesStore';
 import { createBackendStore } from './store/backendStore';
 import { createSlidesGroupStore } from './store/slidesGroupStore';
-import { authStore } from './auth/authStore';
+import { authStore } from './store/appStore';
 import { getRouterBasename } from '../publicPath.js';
 import './App.css';
 
@@ -172,8 +172,6 @@ const App = observer(() => {
           title="react-slide login"
           data={authStore.loginData}
           onDataChangeRequest={authStore.onDataChangeRequest}
-          useAuthToken={false}
-          showTokenAtLogin={false}
         />
       </div>
     );

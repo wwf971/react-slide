@@ -368,10 +368,13 @@ const Page = observer(({
             <Menu
               data={{
                 items: menuItems,
-                position: menuState.position,
+              }}
+              config={{
+                isOpen: true,
+                posOpen: menuState.position,
               }}
               onEvent={(eventType, eventData) => {
-                if (eventType === 'close') {
+                if (eventType === 'closeRequest') {
                   setMenuState(null);
                   return;
                 }

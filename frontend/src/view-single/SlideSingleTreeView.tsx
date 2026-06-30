@@ -211,64 +211,73 @@ const SlideSingleTreeView = observer(({ store }: any) => {
       <div className="slide-tree-title">Slide Resources</div>
       <div className="slide-tree-body">
         <TreeView
-          className="slide-tree-view"
-          rootItemIds={treeData.rootItemIds}
-          getItemDataById={(itemId: string) => treeData.itemDataById[itemId] ?? null}
-          selectedItemId={treeData.selectedItemId}
-          getItemComp={() => (props: any) => (
-            <SlideSingleTreeItem
-              {...props}
-              editingPageId={editingPageId}
-              renameDraftText={renameDraftText}
-              renameErrorMessage={
-                renameErrorState?.pageId === `${props?.itemData?.pageId ?? ''}`.trim()
-                  ? renameErrorState.message
-                  : ''
-              }
-              isRenameSubmitting={Boolean(submittingPageId)
-                && submittingPageId === `${props?.itemData?.pageId ?? ''}`.trim()}
-              onRenameDraftTextChange={setRenameDraftText}
-              onRenameCommit={requestCommitRename}
-              onRenameCancel={requestCancelRename}
-            />
-          )}
-          getItemRowClassName={(itemData: any) => {
-            const pageId = `${itemData?.pageId ?? ''}`.trim();
-            const classNames = [];
-            if (itemData?.isCurrentPage === true) classNames.push('is-current-page');
-            if (editingPageId && editingPageId === pageId) classNames.push('is-page-renaming');
-            if (submittingPageId && submittingPageId === pageId) classNames.push('is-page-rename-submitting');
-            return classNames.join(' ');
+          data={{
+            itemRootIds: treeData.rootItemIds,
+            itemDataById: treeData.itemDataById,
+            itemSelectedId: treeData.selectedItemId,
           }}
-          indentPx={8}
-          onDataChangeRequest={async (type: string, params: any) => {
-            const itemId = `${params?.itemId ?? ''}`.trim();
-            if (!itemId) return { code: -1 };
-            if (type === 'toggle-expand') {
-              store.setSlideTreeItemExpanded(slideId, itemId, params?.nextIsExpanded === true);
+          config={{
+            className: 'slide-tree-view',
+            indentPx: 8,
+            getItemComp: () => (props: any) => (
+              <SlideSingleTreeItem
+                {...props}
+                editingPageId={editingPageId}
+                renameDraftText={renameDraftText}
+                renameErrorMessage={
+                  renameErrorState?.pageId === `${props?.itemData?.pageId ?? ''}`.trim()
+                    ? renameErrorState.message
+                    : ''
+                }
+                isRenameSubmitting={Boolean(submittingPageId)
+                  && submittingPageId === `${props?.itemData?.pageId ?? ''}`.trim()}
+                onRenameDraftTextChange={setRenameDraftText}
+                onRenameCommit={requestCommitRename}
+                onRenameCancel={requestCancelRename}
+              />
+            ),
+            getItemRowClassName: (itemData: any) => {
+              const pageId = `${itemData?.pageId ?? ''}`.trim();
+              const classNames = [];
+              if (itemData?.isCurrentPage === true) classNames.push('is-current-page');
+              if (editingPageId && editingPageId === pageId) classNames.push('is-page-renaming');
+              if (submittingPageId && submittingPageId === pageId) classNames.push('is-page-rename-submitting');
+              return classNames.join(' ');
+            },
+          }}
+          onEvent={async (eventType: string, eventData: any) => {
+            if (eventType === 'toggleExpand') {
+              const itemId = `${eventData?.itemId ?? ''}`.trim();
+              if (!itemId) return { code: -1 };
+              store.setSlideTreeItemExpanded(slideId, itemId, eventData?.nextIsExpanded === true);
               return { code: 0 };
             }
+            if (eventType === 'itemClick') {
+              requestSelectItem(eventData?.itemData);
+              return { code: 0 };
+            }
+            if (eventType === 'itemDoubleClick') {
+              const itemData = eventData?.itemData;
+              if (`${itemData?.kind ?? ''}` !== 'page') return { code: 0 };
+              const pageId = `${itemData?.pageId ?? ''}`.trim();
+              if (!pageId) return { code: 0 };
+              store.setCurrentPage(pageId);
+              store.clearSelectedContainer();
+              return { code: 0 };
+            }
+            if (eventType === 'itemContextMenu') {
+              const itemData = eventData?.itemData;
+              const event = eventData?.event;
+              if (`${itemData?.kind ?? ''}` !== 'page') return { code: 0 };
+              const pageId = `${itemData?.pageId ?? ''}`.trim();
+              if (!pageId) return { code: 0 };
+              setPageMenuState({
+                pageId,
+                x: event.clientX,
+                y: event.clientY,
+              });
+            }
             return { code: 0 };
-          }}
-          onItemClick={async (_itemId: string, itemData: any) => {
-            requestSelectItem(itemData);
-          }}
-          onItemDoubleClick={async (_itemId: string, itemData: any) => {
-            if (`${itemData?.kind ?? ''}` !== 'page') return;
-            const pageId = `${itemData?.pageId ?? ''}`.trim();
-            if (!pageId) return;
-            store.setCurrentPage(pageId);
-            store.clearSelectedContainer();
-          }}
-          onItemContextMenu={async (_itemId: string, itemData: any, event: any) => {
-            if (`${itemData?.kind ?? ''}` !== 'page') return;
-            const pageId = `${itemData?.pageId ?? ''}`.trim();
-            if (!pageId) return;
-            setPageMenuState({
-              pageId,
-              x: event.clientX,
-              y: event.clientY,
-            });
           }}
         />
         {pageMenuState ? (
@@ -284,13 +293,16 @@ const SlideSingleTreeView = observer(({ store }: any) => {
                   },
                 },
               ],
-              position: {
+            }}
+            config={{
+              isOpen: true,
+              posOpen: {
                 x: pageMenuState.x,
                 y: pageMenuState.y,
               },
             }}
             onEvent={(eventType: string, eventData: any) => {
-              if (eventType === 'close' || eventType === 'backdropContextMenu') {
+              if (eventType === 'closeRequest' || eventType === 'backdropContextMenu') {
                 setPageMenuState(null);
                 return;
               }

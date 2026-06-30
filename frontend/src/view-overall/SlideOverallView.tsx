@@ -99,54 +99,71 @@ const SlideOverallView = observer(({
           >
             <FolderView
               key={`orphan-${slidesGroupStore.overviewDataVersion}`}
-              columns={{
-                name: { data: 'name', align: 'left' },
-                slideId: { data: 'slideId', align: 'left' },
+              data={{
+                columns: {
+                  name: { data: 'name', align: 'left' },
+                  slideId: { data: 'slideId', align: 'left' },
+                },
+                colsOrder: ['name', 'slideId'],
+                rows: orphanRows,
+                statusBar: {
+                  itemCount: orphanRows.length,
+                  messageState: slidesGroupStore.isOverviewLoading
+                    ? { status: 'loading', messageText: 'loading orphan slides' }
+                    : null,
+                },
               }}
-              columnsOrder={['name', 'slideId']}
-              columnsSizeInit={{
-                name: { width: 300, minWidth: 140, resizable: true },
-                slideId: { width: 220, minWidth: 120, resizable: true },
+              config={{
+                colSizeById: {
+                  name: { width: 300, minWidth: 140, resizable: true },
+                  slideId: { width: 220, minWidth: 120, resizable: true },
+                },
+                isListOnly: true,
+                bodyHeight: 220,
+                isStatusBarVisible: false,
+                isLocked: slidesGroupStore.isOverviewLoading,
+                isContextMenuBuiltInDisabled: true,
+                compBodyByColId: (colId) => {
+                  if (colId !== 'name') return undefined;
+                  return ({ data, rowId }) => {
+                    const slideId = `${rowId ?? ''}`.trim();
+                    const isMissing = orphanMissingSlideIdMap[slideId] === true;
+                    return renderNameCell({
+                      data,
+                      rowId: slideId,
+                      isMissing,
+                      onRename: async (nextName) => {
+                        const result = await slidesGroupStore.requestRenameSlide(slideId, nextName);
+                        return {
+                          ok: result?.ok,
+                          message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
+                        };
+                      },
+                    });
+                  };
+                },
               }}
-              rows={orphanRows}
-              listOnly={true}
-              bodyHeight={220}
-              showStatusBar={false}
-              loading={slidesGroupStore.isOverviewLoading}
-              loadingMessage="loading orphan slides"
-              getBodyComponent={(columnId) => {
-                if (columnId !== 'name') return null;
-                return ({ data, rowId }) => {
-                  const slideId = `${rowId ?? ''}`.trim();
-                  const isMissing = orphanMissingSlideIdMap[slideId] === true;
-                  return renderNameCell({
-                    data,
-                    rowId: slideId,
-                    isMissing,
-                    onRename: async (nextName) => {
-                      const result = await slidesGroupStore.requestRenameSlide(slideId, nextName);
-                      return {
-                        ok: result?.ok,
-                        message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
-                      };
-                    },
+              onEvent={async (eventType, eventData) => {
+                if (eventType === 'rowContextMenu') {
+                  const slideId = `${eventData.rowId ?? ''}`.trim();
+                  if (!slideId) return { code: 0 };
+                  const event = eventData.event as MouseEvent;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setOrphanMenuState({
+                    x: event.clientX,
+                    y: event.clientY,
+                    slideId,
                   });
-                };
-              }}
-              onRowContextMenu={(event, rowId) => {
-                const slideId = `${rowId ?? ''}`.trim();
-                if (!slideId) return;
-                event.preventDefault();
-                event.stopPropagation();
-                setOrphanMenuState({
-                  x: event.clientX,
-                  y: event.clientY,
-                  slideId,
-                });
-              }}
-              onRowDoubleClick={(slideId) => {
-                if (!slideId) return;
-                navigate(`/slide?slideId=${encodeURIComponent(slideId)}`);
+                  return { code: 0 };
+                }
+                if (eventType === 'rowDoubleClick') {
+                  const slideId = String(eventData.rowId || '');
+                  if (!slideId) return { code: 0 };
+                  navigate(`/slide?slideId=${encodeURIComponent(slideId)}`);
+                  return { code: 0 };
+                }
+                return { code: 0 };
               }}
             />
           </div>
@@ -188,47 +205,62 @@ const SlideOverallView = observer(({
           </div>
           <FolderView
             key={`group-${slidesGroupStore.overviewDataVersion}`}
-            columns={{
-              name: { data: 'name', align: 'left' },
-              slideNum: { data: 'slideNum', align: 'left' },
-              groupId: { data: 'groupId', align: 'left' },
+            data={{
+              columns: {
+                name: { data: 'name', align: 'left' },
+                slideNum: { data: 'slideNum', align: 'left' },
+                groupId: { data: 'groupId', align: 'left' },
+              },
+              colsOrder: ['name', 'slideNum', 'groupId'],
+              rows: groupRows,
+              rowIdsSelected: selectedGroupId ? [selectedGroupId] : [],
+              statusBar: {
+                itemCount: groupRows.length,
+                messageState: slidesGroupStore.isOverviewLoading
+                  ? { status: 'loading', messageText: 'loading slide groups' }
+                  : null,
+              },
             }}
-            columnsOrder={['name', 'slideNum', 'groupId']}
-            columnsSizeInit={{
-              name: { width: 300, minWidth: 150, resizable: true },
-              slideNum: { width: 120, minWidth: 80, resizable: true },
-              groupId: { width: 220, minWidth: 120, resizable: true },
+            config={{
+              colSizeById: {
+                name: { width: 300, minWidth: 150, resizable: true },
+                slideNum: { width: 120, minWidth: 80, resizable: true },
+                groupId: { width: 220, minWidth: 120, resizable: true },
+              },
+              isStatusBarVisible: false,
+              bodyHeight: 220,
+              selectionMode: 'single',
+              isLocked: slidesGroupStore.isOverviewLoading,
+              compBodyByColId: (colId) => {
+                if (colId !== 'name') return undefined;
+                return ({ data, rowId }) => {
+                  const groupId = `${rowId ?? ''}`.trim();
+                  return renderNameCell({
+                    data,
+                    rowId: groupId,
+                    onRename: async (nextName) => {
+                      const result = await slidesGroupStore.requestRenameGroup(groupId, nextName);
+                      return {
+                        ok: result?.ok,
+                        message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
+                      };
+                    },
+                  });
+                };
+              },
             }}
-            rows={groupRows}
-            selectedRowIds={selectedGroupId ? [selectedGroupId] : []}
-            onSelectedRowIdsChange={(nextGroupIds) => {
-              slidesGroupStore.setSelectedOverviewGroup(nextGroupIds?.[0] ?? '');
-            }}
-            selectionMode="single"
-            showStatusBar={false}
-            bodyHeight={220}
-            loading={slidesGroupStore.isOverviewLoading}
-            loadingMessage="loading slide groups"
-            getBodyComponent={(columnId) => {
-              if (columnId !== 'name') return null;
-              return ({ data, rowId }) => {
-                const groupId = `${rowId ?? ''}`.trim();
-                return renderNameCell({
-                  data,
-                  rowId: groupId,
-                  onRename: async (nextName) => {
-                    const result = await slidesGroupStore.requestRenameGroup(groupId, nextName);
-                    return {
-                      ok: result?.ok,
-                      message: result?.ok ? '' : (`${slidesGroupStore.errorText ?? ''}`.trim() || 'rename failed'),
-                    };
-                  },
-                });
-              };
-            }}
-            onRowDoubleClick={(groupId) => {
-              if (!groupId) return;
-              navigate(`/group?groupId=${encodeURIComponent(groupId)}`);
+            onEvent={async (eventType, eventData) => {
+              if (eventType === 'rowIdsSelectedChange') {
+                slidesGroupStore.setSelectedOverviewGroup((eventData.rowIdsSelected as string[])?.[0] ?? '');
+                return { code: 0 };
+              }
+              if (eventType === 'rowDoubleClick') {
+                const groupId = String(eventData.rowId || '');
+                if (!groupId) return { code: 0 };
+                navigate(`/group?groupId=${encodeURIComponent(groupId)}`);
+                return { code: 0 };
+              }
+              return { code: 0 };
             }}
           />
         </div>
@@ -293,10 +325,13 @@ const SlideOverallView = observer(({
                 ? [{ id: 'delete-orphan-slide', label: 'Delete', data: { action: 'delete-orphan-slide' } }]
                 : []),
             ],
-            position: { x: orphanMenuState.x, y: orphanMenuState.y },
+          }}
+          config={{
+            isOpen: true,
+            posOpen: { x: orphanMenuState.x, y: orphanMenuState.y },
           }}
           onEvent={async (eventType, eventData) => {
-            if (eventType === 'close') {
+            if (eventType === 'closeRequest') {
               setOrphanMenuState(null);
               return;
             }

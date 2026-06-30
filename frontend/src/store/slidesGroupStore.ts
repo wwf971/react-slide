@@ -75,7 +75,9 @@ class SlidesGroupStore {
       this.errorText = '';
     });
     try {
-      const result = await this.requestJson('/api/slide/groups/overview');
+      const result = await this.requestJson('/api/slide/groups/overview', {
+        method: 'POST',
+      });
       if (result.code !== 0) {
         if (requestToken !== this.overviewRequestToken) return { ok: false };
         runInAction(() => {
@@ -231,8 +233,12 @@ class SlidesGroupStore {
     });
     try {
       const [groupResult, slideResult] = await Promise.all([
-        this.requestJson('/api/slide/groups'),
-        this.requestJson('/api/slide/slides'),
+        this.requestJson('/api/slide/groups/list', {
+          method: 'POST',
+        }),
+        this.requestJson('/api/slide/slides/list', {
+          method: 'POST',
+        }),
       ]);
       if (groupResult.code !== 0) {
         if (requestToken !== this.groupRequestToken) return { ok: false };

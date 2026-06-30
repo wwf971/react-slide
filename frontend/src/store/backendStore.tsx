@@ -61,7 +61,9 @@ class BackendStore {
       this.isDatabaseLoading = true;
     });
     try {
-      const result = await this.requestJson(`${BACKEND_BASE_URL}/api/slide/database/presets`);
+      const result = await this.requestJson(`${BACKEND_BASE_URL}/api/slide/database/presets`, {
+        method: 'POST',
+      });
       if (result.code !== 0) {
         if (requestToken !== this.loadDatabasesRequestToken) return { ok: false };
         runInAction(() => {

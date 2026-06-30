@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { authStore } from '../auth/authStore';
+import { AuthStatusButton } from '@wwf971/react-comp-misc';
+import { authStore } from '../store/appStore';
 import DbSwitcher from '../backend/DbSwitcher';
 import './SlideOverallHeader.css';
 
@@ -14,26 +15,11 @@ const SlideOverallHeader = observer(({
   onEndpointSwitchStart?: () => void;
 }) => {
   const switchRequestTokenRef = useRef(0);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
     if (!backendStore) return;
     backendStore.requestLoadDatabases();
   }, [backendStore]);
-
-  useEffect(() => {
-    const handleDocumentMouseDown = (event: MouseEvent) => {
-      const menuElement = menuRef.current;
-      if (!menuElement) return;
-      if (menuElement.contains(event.target as Node)) return;
-      setIsMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handleDocumentMouseDown, true);
-    return () => {
-      document.removeEventListener('mousedown', handleDocumentMouseDown, true);
-    };
-  }, []);
 
   if (!backendStore) return null;
 
@@ -66,15 +52,6 @@ const SlideOverallHeader = observer(({
     return { ok: overviewResult?.ok === true };
   };
 
-  const handleMenuToggle = () => {
-    setIsMenuOpen((prev) => !prev);
-  };
-
-  const handleLogoutClick = async () => {
-    setIsMenuOpen(false);
-    await authStore.logoutWithApi();
-  };
-
   return (
     <div className="slides-overview-header">
       <DbSwitcher
@@ -103,27 +80,25 @@ const SlideOverallHeader = observer(({
           }
         }}
       />
-      <div className="slides-overview-header-auth" ref={menuRef}>
-        <button
-          className="slides-overview-header-auth-button"
-          disabled={authStore.isLoading}
-          type="button"
-          onClick={handleMenuToggle}
-        >
-          <span>{authStore.isLoading ? 'logging out' : 'logged in'}</span>
-        </button>
-        {isMenuOpen ? (
-          <div className="slides-overview-header-menu-list">
-            <button
-              className="slides-overview-header-menu-item"
-              disabled={authStore.isLoading}
-              onClick={handleLogoutClick}
-              type="button"
-            >
-              log out
-            </button>
-          </div>
-        ) : null}
+      <div className="slides-overview-header-auth">
+        <AuthStatusButton
+          data={{
+            isLoggedIn: authStore.isLoggedIn,
+            username: authStore.username,
+          }}
+          config={{
+            isDisabled: authStore.isLoading,
+          }}
+          onEvent={(eventType) => {
+            if (eventType === 'go-login') {
+              authStore.goToLoginPage();
+              return;
+            }
+            if (eventType === 'sign-out') {
+              void authStore.logout();
+            }
+          }}
+        />
       </div>
     </div>
   );
